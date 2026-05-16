@@ -1,9 +1,9 @@
-name: Build SDM710 Kernel with KernelSU 0.9.5
+name: Build SDM710 Kernel + KernelSU 0.9.5
 
 on:
+  workflow_dispatch:
   push:
     branches: [ lineage-23.0 ]
-  workflow_dispatch:
 
 jobs:
   build:
@@ -13,43 +13,47 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: lineage-23.0
-          fetch-depth: 0
-          persist-credentials: false
+          fetch-depth: 1
 
-      - name: Install dependencies
+      - name: Install build dependencies
         run: |
           sudo apt update -y
-          sudo apt install -y git ccache build-essential libssl-dev libelf-dev bc bison flex python3 libarchive-tools
+          sudo apt install -y build-essential libssl-dev libelf-dev bc bison flex python3 zip unzip
 
-      - name: Clone GCC toolchain
+      - name: Download GCC 4.9 toolchain
         run: |
-          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git toolchain
+          wget https://releases.linaro.org/components/toolchain/binaries/latest-7/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
+          tar -xf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
+          echo "$PWD/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin" >> $GITHUB_PATH
 
-      - name: Enable KPROBE support
+      - name: Enable KernelSU required configs
         run: |
+          cd $GITHUB_WORKSPACE
           sed -i 's/# CONFIG_KPROBES is not set/CONFIG_KPROBES=y/' arch/arm64/configs/sdm710_defconfig
           sed -i 's/# CONFIG_KALLSYMS_ALL is not set/CONFIG_KALLSYMS_ALL=y/' arch/arm64/configs/sdm710_defconfig
           sed -i 's/# CONFIG_MODULES is not set/CONFIG_MODULES=y/' arch/arm64/configs/sdm710_defconfig
+          sed -i 's/# CONFIG_MODULE_UNLOAD is not set/CONFIG_MODULE_UNLOAD=y/' arch/arm64/configs/sdm710_defconfig
 
       - name: Integrate KernelSU 0.9.5
         run: |
+          cd $GITHUB_WORKSPACE
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh" | bash -s v0.9.5
 
       - name: Build kernel
         env:
-          PATH: ${{ github.workspace }}/toolchain/bin:$PATH
           ARCH: arm64
-          CROSS_COMPILE: aarch64-linux-android-
+          CROSS_COMPILE: aarch64-linux-gnu-
         run: |
+          cd $GITHUB_WORKSPACE
           make sdm710_defconfig
           make -j$(nproc)
 
       - name: Prepare boot.img
         run: |
-          cp arch/arm64/boot/Image.gz-dtb ${{ github.workspace }}/boot.img
+          cp $GITHUB_WORKSPACE/arch/arm64/boot/Image.gz-dtb $GITHUB_WORKSPACE/boot.img
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: compiled-boot-kernelsu095
+          name: boot-with-kernelsu095
           path: boot.img
