@@ -9,30 +9,33 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
         with:
           ref: lineage-23.0
+          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Install Dependencies
+      - name: Install dependencies
         run: |
           sudo apt update -y
-          sudo apt install -y git ccache build-essential libssl-dev libelf-dev bc bison flex python3
+          sudo apt install -y git ccache build-essential libssl-dev libelf-dev bc bison flex python3 libarchive-tools
 
-      - name: Clone Toolchain
+      - name: Clone GCC toolchain
         run: |
-          git clone --depth=1 https://github.com/mervin16/aarch64-linux-android-4.9 toolchain
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git toolchain
 
-      - name: Enable KPROBE & KALLSYMS
+      - name: Enable KPROBE support
         run: |
           sed -i 's/# CONFIG_KPROBES is not set/CONFIG_KPROBES=y/' arch/arm64/configs/sdm710_defconfig
           sed -i 's/# CONFIG_KALLSYMS_ALL is not set/CONFIG_KALLSYMS_ALL=y/' arch/arm64/configs/sdm710_defconfig
           sed -i 's/# CONFIG_MODULES is not set/CONFIG_MODULES=y/' arch/arm64/configs/sdm710_defconfig
 
-      - name: Integrate KernelSU 0.9.5 (Kprobe mode)
+      - name: Integrate KernelSU 0.9.5
         run: |
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh" | bash -s v0.9.5
 
-      - name: Build Kernel
+      - name: Build kernel
         env:
           PATH: ${{ github.workspace }}/toolchain/bin:$PATH
           ARCH: arm64
@@ -41,13 +44,12 @@ jobs:
           make sdm710_defconfig
           make -j$(nproc)
 
-      - name: Extract boot.img
+      - name: Prepare boot.img
         run: |
-          cp out/arch/arm64/boot/Image.gz-dtb ${{ github.workspace }}/boot.img
+          cp arch/arm64/boot/Image.gz-dtb ${{ github.workspace }}/boot.img
 
-      - name: Upload Artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: compiled-boot-kernelsu095
           path: boot.img
-
