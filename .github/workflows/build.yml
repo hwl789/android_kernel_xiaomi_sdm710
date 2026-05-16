@@ -26,12 +26,29 @@ jobs:
           tar -xf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
           echo "$PWD/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin" >> $GITHUB_PATH
 
-      - name: Apply KernelSU configs to the correct defconfig
+      - name: List all defconfig files
         run: |
           cd $GITHUB_WORKSPACE
-          # 小米8 SE 专用配置文件
-          DEFCONFIG=arch/arm64/configs/lineageos_xmsirius_defconfig
-          # 启用 KSU 必需选项
+          echo "=== All defconfig files ==="
+          ls -la arch/arm64/configs/
+
+      - name: Find the correct defconfig for xmsirius
+        id: find_defconfig
+        run: |
+          cd $GITHUB_WORKSPACE
+          DEFCONFIG=$(find arch/arm64/configs -name "*sirius*" -o -name "*xmsirius*" | head -n 1)
+          echo "defconfig=$DEFCONFIG" >> $GITHUB_OUTPUT
+          echo "Found defconfig: $DEFCONFIG"
+          if [ -z "$DEFCONFIG" ]; then
+            echo "❌ No defconfig found!"
+            exit 1
+          fi
+
+      - name: Apply KernelSU configs
+        run: |
+          cd $GITHUB_WORKSPACE
+          DEFCONFIG=${{ steps.find_defconfig.outputs.defconfig }}
+          echo "Patching $DEFCONFIG"
           sed -i 's/# CONFIG_KPROBES is not set/CONFIG_KPROBES=y/' $DEFCONFIG
           sed -i 's/# CONFIG_KALLSYMS_ALL is not set/CONFIG_KALLSYMS_ALL=y/' $DEFCONFIG
           sed -i 's/# CONFIG_MODULES is not set/CONFIG_MODULES=y/' $DEFCONFIG
@@ -42,13 +59,16 @@ jobs:
           cd $GITHUB_WORKSPACE
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh" | bash -s v0.9.5
 
-      - name: Build kernel for xmsirius
+      - name: Build kernel
         env:
           ARCH: arm64
           CROSS_COMPILE: aarch64-linux-gnu-
         run: |
           cd $GITHUB_WORKSPACE
-          make lineageos_xmsirius_defconfig
+          DEFCONFIG=${{ steps.find_defconfig.outputs.defconfig }}
+          DEFCONFIG_NAME=$(basename $DEFCONFIG)
+          echo "Building with defconfig: $DEFCONFIG_NAME"
+          make $DEFCONFIG_NAME
           make -j$(nproc)
 
       - name: Prepare boot.img
