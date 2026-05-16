@@ -1,4 +1,4 @@
-name: Build SDM710 Kernel + KernelSU 0.9.5
+name: Xiaomi 8 SE Kernel + KernelSU 0.9.5
 
 on:
   workflow_dispatch:
@@ -15,33 +15,23 @@ jobs:
           ref: lineage-23.0
           fetch-depth: 1
 
-      - name: Install build dependencies
+      - name: Install dependencies
         run: |
           sudo apt update -y
           sudo apt install -y build-essential libssl-dev libelf-dev bc bison flex python3 zip unzip
 
-      - name: Download GCC toolchain
+      - name: Download Linaro GCC 7.5
         run: |
           wget https://releases.linaro.org/components/toolchain/binaries/latest-7/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
           tar -xf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
           echo "$PWD/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin" >> $GITHUB_PATH
 
-      - name: Find kernel defconfig
-        id: find_defconfig
+      - name: Apply KernelSU configs to the correct defconfig
         run: |
           cd $GITHUB_WORKSPACE
-          DEFCONFIG=$(find arch/arm64/configs -name "*sdm710*" -o -name "*msm8998*" | head -n 1)
-          echo "defconfig=$DEFCONFIG" >> $GITHUB_OUTPUT
-          echo "Found defconfig: $DEFCONFIG"
-
-      - name: Enable KernelSU required configs
-        run: |
-          cd $GITHUB_WORKSPACE
-          DEFCONFIG=${{ steps.find_defconfig.outputs.defconfig }}
-          if [ -z "$DEFCONFIG" ]; then
-            echo "No defconfig found!"
-            exit 1
-          fi
+          # 小米8 SE 专用配置文件
+          DEFCONFIG=arch/arm64/configs/lineageos_xmsirius_defconfig
+          # 启用 KSU 必需选项
           sed -i 's/# CONFIG_KPROBES is not set/CONFIG_KPROBES=y/' $DEFCONFIG
           sed -i 's/# CONFIG_KALLSYMS_ALL is not set/CONFIG_KALLSYMS_ALL=y/' $DEFCONFIG
           sed -i 's/# CONFIG_MODULES is not set/CONFIG_MODULES=y/' $DEFCONFIG
@@ -52,15 +42,13 @@ jobs:
           cd $GITHUB_WORKSPACE
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh" | bash -s v0.9.5
 
-      - name: Build kernel
+      - name: Build kernel for xmsirius
         env:
           ARCH: arm64
           CROSS_COMPILE: aarch64-linux-gnu-
         run: |
           cd $GITHUB_WORKSPACE
-          DEFCONFIG=${{ steps.find_defconfig.outputs.defconfig }}
-          DEFCONFIG_NAME=$(basename $DEFCONFIG)
-          make $DEFCONFIG_NAME
+          make lineageos_xmsirius_defconfig
           make -j$(nproc)
 
       - name: Prepare boot.img
@@ -70,5 +58,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: boot-with-kernelsu095
+          name: xmsirius-boot-with-ksu095
           path: boot.img
