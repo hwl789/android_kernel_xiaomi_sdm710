@@ -1,4 +1,4 @@
-name: Xiaomi 8 SE Kernel + KernelSU 0.9.5
+name: SDM710 Kernel + KernelSU 0.9.5
 
 on:
   workflow_dispatch:
@@ -26,34 +26,15 @@ jobs:
           tar -xf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
           echo "$PWD/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin" >> $GITHUB_PATH
 
-      - name: List all *_defconfig files
+      - name: Apply KernelSU configs to sdm710_defconfig
         run: |
           cd $GITHUB_WORKSPACE
-          echo "=== All *_defconfig files ==="
-          ls -la arch/arm64/configs/*_defconfig
-
-      - name: Find the correct *_defconfig for xmsirius
-        id: find_defconfig
-        run: |
-          cd $GITHUB_WORKSPACE
-          # 只找带 sirius/xmsirius 的 *_defconfig 文件
-          DEFCONFIG=$(find arch/arm64/configs -name "*sirius*_defconfig" | head -n 1)
-          echo "defconfig=$DEFCONFIG" >> $GITHUB_OUTPUT
-          echo "Found defconfig: $DEFCONFIG"
-          if [ -z "$DEFCONFIG" ]; then
-            echo "❌ No *_defconfig found!"
-            exit 1
-          fi
-
-      - name: Apply KernelSU configs
-        run: |
-          cd $GITHUB_WORKSPACE
-          DEFCONFIG=${{ steps.find_defconfig.outputs.defconfig }}
-          echo "Patching $DEFCONFIG"
-          sed -i 's/# CONFIG_KPROBES is not set/CONFIG_KPROBES=y/' $DEFCONFIG
-          sed -i 's/# CONFIG_KALLSYMS_ALL is not set/CONFIG_KALLSYMS_ALL=y/' $DEFCONFIG
-          sed -i 's/# CONFIG_MODULES is not set/CONFIG_MODULES=y/' $DEFCONFIG
-          sed -i 's/# CONFIG_MODULE_UNLOAD is not set/CONFIG_MODULE_UNLOAD=y/' $DEFCONFIG
+          DEFCONFIG=arch/arm64/configs/sdm710_defconfig
+          # 强制修改配置，不管文件是否存在注释
+          echo "CONFIG_KPROBES=y" >> $DEFCONFIG
+          echo "CONFIG_KALLSYMS_ALL=y" >> $DEFCONFIG
+          echo "CONFIG_MODULES=y" >> $DEFCONFIG
+          echo "CONFIG_MODULE_UNLOAD=y" >> $DEFCONFIG
 
       - name: Integrate KernelSU 0.9.5
         run: |
@@ -66,10 +47,7 @@ jobs:
           CROSS_COMPILE: aarch64-linux-gnu-
         run: |
           cd $GITHUB_WORKSPACE
-          DEFCONFIG=${{ steps.find_defconfig.outputs.defconfig }}
-          DEFCONFIG_NAME=$(basename $DEFCONFIG)
-          echo "Building with defconfig: $DEFCONFIG_NAME"
-          make $DEFCONFIG_NAME
+          make sdm710_defconfig
           make -j$(nproc)
 
       - name: Prepare boot.img
@@ -79,5 +57,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: xmsirius-boot-with-ksu095
+          name: sdm710-boot-with-ksu095
           path: boot.img
