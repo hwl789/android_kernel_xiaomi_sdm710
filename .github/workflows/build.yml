@@ -26,21 +26,22 @@ jobs:
           tar -xf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
           echo "$PWD/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin" >> $GITHUB_PATH
 
-      - name: List all defconfig files
+      - name: List all *_defconfig files
         run: |
           cd $GITHUB_WORKSPACE
-          echo "=== All defconfig files ==="
-          ls -la arch/arm64/configs/
+          echo "=== All *_defconfig files ==="
+          ls -la arch/arm64/configs/*_defconfig
 
-      - name: Find the correct defconfig for xmsirius
+      - name: Find the correct *_defconfig for xmsirius
         id: find_defconfig
         run: |
           cd $GITHUB_WORKSPACE
-          DEFCONFIG=$(find arch/arm64/configs -name "*sirius*" -o -name "*xmsirius*" | head -n 1)
+          # 只找带 sirius/xmsirius 的 *_defconfig 文件
+          DEFCONFIG=$(find arch/arm64/configs -name "*sirius*_defconfig" | head -n 1)
           echo "defconfig=$DEFCONFIG" >> $GITHUB_OUTPUT
           echo "Found defconfig: $DEFCONFIG"
           if [ -z "$DEFCONFIG" ]; then
-            echo "❌ No defconfig found!"
+            echo "❌ No *_defconfig found!"
             exit 1
           fi
 
