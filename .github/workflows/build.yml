@@ -20,19 +20,32 @@ jobs:
           sudo apt update -y
           sudo apt install -y build-essential libssl-dev libelf-dev bc bison flex python3 zip unzip
 
-      - name: Download GCC 4.9 toolchain
+      - name: Download GCC toolchain
         run: |
           wget https://releases.linaro.org/components/toolchain/binaries/latest-7/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
           tar -xf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
           echo "$PWD/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin" >> $GITHUB_PATH
 
+      - name: Find kernel defconfig
+        id: find_defconfig
+        run: |
+          cd $GITHUB_WORKSPACE
+          DEFCONFIG=$(find arch/arm64/configs -name "*sdm710*" -o -name "*msm8998*" | head -n 1)
+          echo "defconfig=$DEFCONFIG" >> $GITHUB_OUTPUT
+          echo "Found defconfig: $DEFCONFIG"
+
       - name: Enable KernelSU required configs
         run: |
           cd $GITHUB_WORKSPACE
-          sed -i 's/# CONFIG_KPROBES is not set/CONFIG_KPROBES=y/' arch/arm64/configs/sdm710_defconfig
-          sed -i 's/# CONFIG_KALLSYMS_ALL is not set/CONFIG_KALLSYMS_ALL=y/' arch/arm64/configs/sdm710_defconfig
-          sed -i 's/# CONFIG_MODULES is not set/CONFIG_MODULES=y/' arch/arm64/configs/sdm710_defconfig
-          sed -i 's/# CONFIG_MODULE_UNLOAD is not set/CONFIG_MODULE_UNLOAD=y/' arch/arm64/configs/sdm710_defconfig
+          DEFCONFIG=${{ steps.find_defconfig.outputs.defconfig }}
+          if [ -z "$DEFCONFIG" ]; then
+            echo "No defconfig found!"
+            exit 1
+          fi
+          sed -i 's/# CONFIG_KPROBES is not set/CONFIG_KPROBES=y/' $DEFCONFIG
+          sed -i 's/# CONFIG_KALLSYMS_ALL is not set/CONFIG_KALLSYMS_ALL=y/' $DEFCONFIG
+          sed -i 's/# CONFIG_MODULES is not set/CONFIG_MODULES=y/' $DEFCONFIG
+          sed -i 's/# CONFIG_MODULE_UNLOAD is not set/CONFIG_MODULE_UNLOAD=y/' $DEFCONFIG
 
       - name: Integrate KernelSU 0.9.5
         run: |
@@ -45,7 +58,9 @@ jobs:
           CROSS_COMPILE: aarch64-linux-gnu-
         run: |
           cd $GITHUB_WORKSPACE
-          make sdm710_defconfig
+          DEFCONFIG=${{ steps.find_defconfig.outputs.defconfig }}
+          DEFCONFIG_NAME=$(basename $DEFCONFIG)
+          make $DEFCONFIG_NAME
           make -j$(nproc)
 
       - name: Prepare boot.img
