@@ -1,4 +1,4 @@
-name: Rocky7842 SDM710 (Mi8SE/sirius) + KernelSU 0.9.5
+name: Rocky7842 SDM710 (Mi8SE/sirius) + KernelSU 0.7.6
 on:
   workflow_dispatch:
   push:
@@ -34,34 +34,21 @@ jobs:
           # 修复NR_CPUS=8
           sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
 
-      - name: 2. 注入0.9.5专用兼容配置
+      - name: 2. 注入KSU稳定基础配置
         run: |
           cd $GITHUB_WORKSPACE
-          # 0.9.5必须的依赖，同时解决链接错误
-          echo "CONFIG_KPROBES=y" >> .config
-          echo "CONFIG_KPROBE_EVENTS=y" >> .config
           echo "CONFIG_KALLSYMS=y" >> .config
           echo "CONFIG_KALLSYMS_ALL=y" >> .config
           echo "CONFIG_MODULES=y" >> .config
           echo "CONFIG_MODULE_UNLOAD=y" >> .config
           echo "CONFIG_KSU=y" >> .config
           
-          # 关键：强制开启DEBUG_INFO，修复符号链接问题
-          echo "CONFIG_DEBUG_INFO=y" >> .config
-          echo "CONFIG_DEBUG_INFO_DWARF4=y" >> .config
-          
           make ARCH=arm64 olddefconfig
 
-      - name: 3. 手动修复kprobes链接依赖
+      - name: Integrate KernelSU 0.7.6
         run: |
           cd $GITHUB_WORKSPACE
-          # 修复probes模块的编译依赖，避免built-in.o链接失败
-          sed -i 's/obj-$(CONFIG_KPROBES)/obj-y/g' arch/arm64/kernel/probes/Makefile
-
-      - name: Integrate KernelSU 0.9.5
-        run: |
-          cd $GITHUB_WORKSPACE
-          curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh | bash -s v0.9.5
+          curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/v0.7.6/kernel/setup.sh | bash -s v0.7.6
 
       - name: Build Kernel (完整日志)
         env:
@@ -78,5 +65,5 @@ jobs:
       - name: Upload Boot Image
         uses: actions/upload-artifact@v4
         with:
-          name: Mi8SE-Sirius-KSU095-Boot
+          name: Mi8SE-Sirius-KSU076-Boot
           path: boot.img
