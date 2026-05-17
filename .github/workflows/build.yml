@@ -49,14 +49,21 @@ jobs:
           cd $GITHUB_WORKSPACE
           curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh | bash -s v0.9.5
 
-      - name: Compile Rocky7842 Kernel
+      - name: Generate and Build Config
         env:
           ARCH: arm64
           CROSS_COMPILE: aarch64-linux-android-
         run: |
           cd $GITHUB_WORKSPACE
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
-          make sdm710_defconfig
+          
+          # 1. 合并两个配置文件生成临时 defconfig
+          cat arch/arm64/configs/xiaomi/sdm710-common.config arch/arm64/configs/xiaomi/pyxis.config > arch/arm64/configs/pyxis_defconfig
+          
+          # 2. 使用合并后的配置生成 .config
+          make pyxis_defconfig
+          
+          # 3. 开始编译
           make -j$(nproc)
 
       - name: Move Kernel Image
@@ -68,4 +75,3 @@ jobs:
         with:
           name: Rocky7842-Pyxis-KSU095-Boot
           path: boot.img
-        
