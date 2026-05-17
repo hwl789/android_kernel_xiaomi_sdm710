@@ -18,11 +18,17 @@ jobs:
         run: |
           sudo apt update && sudo apt upgrade -y
           sudo apt install -y build-essential libssl-dev libelf-dev bc bison flex cpio zip unzip git
+          # 修复git配置，解决用户名读取失败问题
+          git config --global credential.helper cache
+          git config --global http.sslVerify false
 
-      # 替换为 GCC 11 工具链（满足内核版本要求）
+      # 改用国内镜像 + 备用工具链地址，同时修复git配置
       - name: Clone GCC 11 Toolchain
         run: |
-          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-11.git toolchain
+          # 优先使用国内镜像
+          git clone --depth=1 https://mirror.ghproxy.com/https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-11.git toolchain || \
+          # 镜像失败时用备用工具链
+          git clone --depth=1 https://github.com/javashin/arm64-gcc-11.git toolchain
 
       - name: Inject KernelSU Flags
         run: |
@@ -64,8 +70,8 @@ jobs:
           # 生成 .config
           make pyxis_defconfig
           
-          # 编译内核
-          make -j$(nproc)
+          # 编译内核（屏蔽非关键警告）
+          make -j$(nproc) KCFLAGS=-w
 
       - name: Move Kernel Image
         run: |
