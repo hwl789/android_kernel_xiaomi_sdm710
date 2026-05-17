@@ -1,111 +1,125 @@
-name: Mi8SE/Rocky7842 + KernelSU 0.9.5 (官方手动版)
+name: 小米8SE SDM710 内核编译集成KernelSU0.9.5
 on:
   workflow_dispatch:
-  push:
-    branches: [ lineage-23.0 ]
 
 jobs:
-  build:
+  build-kernel:
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout Kernel Source
+      - name: 拉取内核源码
         uses: actions/checkout@v4
         with:
           repository: Rocky7842/android_kernel_xiaomi_sdm710
           ref: lineage-23.0
           fetch-depth: 1
 
-      - name: Install Full Build Dependencies
+      - name: 安装编译依赖
         run: |
-          sudo apt update && sudo apt upgrade -y
-          sudo apt install -y \
-            build-essential libssl-dev libelf-dev bc bison flex cpio zip unzip git \
-            libc6-dev-i386 liblz4-tool lzop openssl \
-            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu clang lld
+          sudo apt update -y
+          sudo apt install -y build-essential libelf-dev bc bison flex libssl-dev \
+          gcc-aarch64-linux-gnu g++-aarch64-linux-gnu lzop liblz4-tool git
 
-      - name: 1. 按官方脚本添加 KernelSU 源码
+      - name: 自动集成 KernelSU 0.9.5
         run: |
-          cd $GITHUB_WORKSPACE
           curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh | bash -s v0.9.5
 
-      - name: 2. 修改 init/main.c 添加 KSU 初始化
+      - name: 写入KSU核心配置
         run: |
-          cd $GITHUB_WORKSPACE
+          echo -e "\nCONFIG_KSU=y
+CONFIG_KSU_NO_KPROBES=y
+CONFIG_KALLSYMS=y
+CONFIG_KALLSYMS_ALL=y
+CONFIG_MODULES=y
+CONFIG_MODULE_UNLOAD=y
+# CONFIG_KPROBES is not set" >> arch/arm64/configs/xiaomi/sirius.config
+
+      - name: 注入init初始化代码
+        run: |
           sed -i '/#include <linux\/init.h>/a #include <linux\/ksu.h>' init/main.c
           sed -i '/do_basic_setup();/a \    ksu_init();' init/main.c
 
-      - name: 3. 给 fs/stat.c 打补丁（适配vfs_fstat）
+      - name: 打入fs/stat.c补丁
         run: |
-          cd $GITHUB_WORKSPACE
-          sed -i '/EXPORT_SYMBOL(vfs_fstat);/a \\n#ifdef CONFIG_KSU\\nextern int ksu_handle_stat(int *dfd, const char __user *filename, int flags, unsigned int mask);\\n#endif' fs/stat.c
+          sed -i '/EXPORT_SYMBOL(vfs_fstat);/a \
+#ifdef CONFIG_KSU
+extern int ksu_handle_stat(int *dfd, const char __user *filename, int flags, unsigned int mask);
+#endif' fs/stat.c
 
-      - name: 4. 给 fs/open.c 打补丁
+      - name: 打入fs/open.c补丁
         run: |
-          cd $GITHUB_WORKSPACE
-          sed -i '/long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)/a \\n#ifdef CONFIG_KSU\\nextern int ksu_handle_open(int *dfd, const char __user *filename, int *flags);\\n#endif' fs/open.c
+          sed -i '/long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)/a \
+#ifdef CONFIG_KSU
+extern int ksu_handle_open(int *dfd, const char __user *filename, int *flags);
+#endif' fs/open.c
 
-      - name: 5. 给 fs/exec.c 打补丁
+      - name: 打入fs/exec.c补丁
         run: |
-          cd $GITHUB_WORKSPACE
-          sed -i '/int do_execveat_common(int fd, struct filename *filename,/a \\n#ifdef CONFIG_KSU\\nextern int ksu_handle_exec(struct filename **filename);\\n#endif' fs/exec.c
+          sed -i '/int do_execveat_common(int fd, struct filename *filename,/a \
+#ifdef CONFIG_KSU
+extern int ksu_handle_exec(struct filename **filename);
+#endif' fs/exec.c
 
-      - name: 6. 给 fs/read_write.c 打补丁
+      - name: 打入fs/read_write.c补丁
         run: |
-          cd $GITHUB_WORKSPACE
-          sed -i '/ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)/a \\n#ifdef CONFIG_KSU\\nextern int ksu_handle_read_write(struct file *file, char __user *buf, size_t *count, loff_t *pos);\\n#endif' fs/read_write.c
+          sed -i '/ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)/a \
+#ifdef CONFIG_KSU
+extern int ksu_handle_read_write(struct file *file, char __user *buf, size_t *count, loff_t *pos);
+#endif' fs/read_write.c
 
-      - name: 7. 给 drivers/input/input.c 打安全模式补丁
+      - name: 打入安全模式input补丁
         run: |
-          cd $GITHUB_WORKSPACE
-          sed -i '/void input_handle_event(struct input_dev *dev,/a \\n#ifdef CONFIG_KSU\\nextern void ksu_handle_input_event(struct input_dev *dev, unsigned int type, unsigned int code, int value);\\n#endif' drivers/input/input.c
-          sed -i '/spin_unlock_irqrestore(&dev->event_lock, flags);/i \\n#ifdef CONFIG_KSU\\n               ksu_handle_input_event(dev, type, code, value);\\n#endif' drivers/input/input.c
+          sed -i '/void input_handle_event(struct input_dev *dev,/a \
+#ifdef CONFIG_KSU
+extern void ksu_handle_input_event(struct input_dev *dev, unsigned int type, unsigned int code, int value);
+#endif' drivers/input/input.c
+          sed -i '/spin_unlock_irqrestore(&dev->event_lock, flags);/i \
+#ifdef CONFIG_KSU
+               ksu_handle_input_event(dev, type, code, value);
+#endif' drivers/input/input.c
 
-      - name: 8. 给 fs/devpts/inode.c 打 pm 命令补丁
+      - name: 打入devpts修复pm命令补丁
         run: |
-          cd $GITHUB_WORKSPACE
-          sed -i '/static struct dentry \*devpts_get_inode/a \\n#ifdef CONFIG_KSU\\nextern int ksu_handle_devpts(struct inode *inode);\\n#endif' fs/devpts/inode.c
+          sed -i '/static struct dentry \*devpts_get_inode/a \
+#ifdef CONFIG_KSU
+extern int ksu_handle_devpts(struct inode *inode);
+#endif' fs/devpts/inode.c
           sed -i '/return NULL;/i ksu_handle_devpts(dentry->d_inode);' fs/devpts/inode.c
 
-      - name: 9. 给 fs/namespace.c 打 path_umount 补丁（模块卸载功能）
+      - name: 打入umount模块卸载补丁
         run: |
-          cd $GITHUB_WORKSPACE
-          sed -i '/static inline bool may_mount(void)/,/#endif/a +static int can_umount(const struct path *path, int flags)\n{\n    struct mount *mnt = real_mount(path->mnt);\n\n    if (flags & ~(MNT_FORCE | MNT_DETACH))\n        return -EINVAL;\n    if (!may_mount())\n        return -EPERM;\n    if (path->dentry != path->mnt->mnt_root)\n        return -EINVAL;\n    if (!mnt->mnt_ns)\n        return -EINVAL;\n    return 0;\n}\n\n#ifdef CONFIG_KSU\nextern int ksu_handle_umount(struct path *path, int *flags);\n#endif' fs/namespace.c
+          sed -i '/static inline bool may_mount(void)/,/#endif/a \
+static int can_umount(const struct path *path, int flags)
+{
+    struct mount *mnt = real_mount(path->mnt);
+    if (flags & ~(MNT_FORCE | MNT_DETACH))
+        return -EINVAL;
+    if (!may_mount())
+        return -EPERM;
+    if (path->dentry != path->mnt->mnt_root)
+        return -EINVAL;
+    if (!mnt->mnt_ns)
+        return -EINVAL;
+    return 0;
+}
+#ifdef CONFIG_KSU
+extern int ksu_handle_umount(struct path *path, int *flags);
+#endif' fs/namespace.c
 
-      - name: 10. 合并小米8 SE配置 + 开启KSU必须配置
+      - name: 载入设备配置
         run: |
-          cd $GITHUB_WORKSPACE
-          COM=arch/arm64/configs/xiaomi/sdm710-common.config
-          DEV=arch/arm64/configs/xiaomi/sirius.config
-          
-          ./scripts/kconfig/merge_config.sh -O . -m $COM $DEV
-          sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
-          
-          echo "CONFIG_KSU=y" >> .config
-          echo "CONFIG_KALLSYMS=y" >> .config
-          echo "CONFIG_KALLSYMS_ALL=y" >> .config
-          echo "CONFIG_MODULES=y" >> .config
-          echo "CONFIG_MODULE_UNLOAD=y" >> .config
-          echo "CONFIG_KSU_NO_KPROBES=y" >> .config
-          echo "# CONFIG_KPROBES is not set" >> .config
-          
-          make ARCH=arm64 olddefconfig
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- sirius_defconfig
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
 
-      - name: Build Kernel (Clang + LLD)
-        env:
-          ARCH: arm64
-          CROSS_COMPILE: aarch64-linux-gnu-
-          CC: clang
-          LD: ld.lld
+      - name: 正式编译内核
         run: |
-          cd $GITHUB_WORKSPACE
-          make -j$(nproc) V=1
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc)
 
-      - name: Move Kernel Image
+      - name: 导出内核镜像
         run: |
-          cp arch/arm64/boot/Image.gz-dtb boot.img
+          cp arch/arm64/boot/Image.gz-dtb ksu-kernel.img
 
-      - name: Upload Boot Image
+      - name: 上传编译成品
         uses: actions/upload-artifact@v4
         with:
-          name: Mi8SE-Sirius-KSU095-Official-Manual-Boot
-          path: boot.img
+          name: 小米8SE-KSU0.9.5内核镜像
+          path: ksu-kernel.img
