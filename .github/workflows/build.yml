@@ -1,4 +1,4 @@
-name: Mi8SE/Rocky7842 + KernelSU 0.9.5 (手动补丁修复版)
+name: Mi8SE/Rocky7842 + KernelSU 0.9.5 (配置修复版)
 on:
   workflow_dispatch:
   push:
@@ -46,7 +46,7 @@ jobs:
           sed -i '/#include <linux\/sched.h>/a #include <linux\/ksu.h>' init/main.c
           sed -i '/do_basic_setup();/a \    ksu_init();' init/main.c
 
-      - name: 5. 合并小米8 SE配置 + 修复NR_CPUS
+      - name: 5. 合并配置 + 生成基础 defconfig
         run: |
           cd $GITHUB_WORKSPACE
           COM=arch/arm64/configs/xiaomi/sdm710-common.config
@@ -55,6 +55,16 @@ jobs:
           ./scripts/kconfig/merge_config.sh -O . -m $COM $DEV
           sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
           echo "# CONFIG_KPROBES is not set" >> .config
+          echo "CONFIG_KSU=y" >> .config
+          echo "CONFIG_KSU_NO_KPROBES=y" >> .config
+          echo "CONFIG_KALLSYMS=y" >> .config
+          echo "CONFIG_KALLSYMS_ALL=y" >> .config
+          echo "CONFIG_MODULES=y" >> .config
+          echo "CONFIG_MODULE_UNLOAD=y" >> .config
+          
+          # 生成 defconfig，避免 silentoldconfig 交互
+          cp .config arch/arm64/configs/sirius_defconfig
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- sirius_defconfig
 
       - name: Build Kernel (Clang + LLD + 显式指定交叉编译器)
         env:
