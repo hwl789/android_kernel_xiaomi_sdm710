@@ -1,4 +1,4 @@
-name: Mi8SE/Rocky7842 + KernelSU 0.9.5 (手动补丁版)
+name: Mi8SE/Rocky7842 + KernelSU 0.9.5 (手动补丁修复版)
 on:
   workflow_dispatch:
   push:
@@ -56,22 +56,12 @@ jobs:
           sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
           echo "# CONFIG_KPROBES is not set" >> .config
 
-      - name: Build Kernel (Clang + LLD)
+      - name: Build Kernel (Clang + LLD + 显式指定交叉编译器)
         env:
           ARCH: arm64
-          CC: clang
           CROSS_COMPILE: aarch64-linux-gnu-
+          CC: clang
           LD: ld.lld
         run: |
           cd $GITHUB_WORKSPACE
           make -j$(nproc) V=1
-
-      - name: Move Kernel Image
-        run: |
-          cp arch/arm64/boot/Image.gz-dtb boot.img
-
-      - name: Upload Boot Image
-        uses: actions/upload-artifact@v4
-        with:
-          name: Mi8SE-Sirius-KSU095-Manual-Boot
-          path: boot.img
