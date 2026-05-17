@@ -32,7 +32,7 @@ jobs:
           
           sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
 
-      - name: 2. 注入0.9.5兼容配置
+      - name: 2. 注入0.9.5兼容配置（核心修复）
         run: |
           cd $GITHUB_WORKSPACE
           echo "CONFIG_KALLSYMS=y" >> .config
@@ -40,16 +40,17 @@ jobs:
           echo "CONFIG_MODULES=y" >> .config
           echo "CONFIG_MODULE_UNLOAD=y" >> .config
           echo "CONFIG_KSU=y" >> .config
+          # 关键：开启无kprobes模式，KSU自动适配
           echo "CONFIG_KSU_NO_KPROBES=y" >> .config
           
           make ARCH=arm64 olddefconfig
 
-      - name: 3. 手动修改内核源码，修复kprobe链接错误
+      - name: 3. 手动修改内核源码，彻底禁用kprobes模块
         run: |
           cd $GITHUB_WORKSPACE
-          # 1. 禁用probes目录编译
+          # 1. 注释掉probes目录的编译指令
           sed -i 's/obj-$(CONFIG_KPROBES)/# obj-$(CONFIG_KPROBES)/g' arch/arm64/kernel/Makefile
-          # 2. 清空probes/Makefile，避免生成built-in.o
+          # 2. 清空probes目录的Makefile，防止生成built-in.o
           echo "# Probes module disabled" > arch/arm64/kernel/probes/Makefile
           echo "obj-y := " >> arch/arm64/kernel/probes/Makefile
 
@@ -57,15 +58,6 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE
           curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh | bash -s v0.9.5
-
-      - name: 4. 给KSU打补丁，兼容非kprobe模式
-        run: |
-          cd $GITHUB_WORKSPACE
-          echo "
-          #ifdef CONFIG_KSU_NO_KPROBES
-          #undef CONFIG_KPROBES
-          #endif
-          " >> KernelSU/kernel/ksu/ksu.c
 
       - name: Build Kernel (Clang + LLD)
         env:
