@@ -1,4 +1,4 @@
-name: Mi8SE/Rocky7842 + KernelSU 0.9.5 (终极修复版)
+name: Mi8SE/Rocky7842 + KernelSU 0.9.5 (手动补丁版)
 on:
   workflow_dispatch:
   push:
@@ -23,7 +23,30 @@ jobs:
             libc6-dev-i386 liblz4-tool lzop openssl \
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu clang lld
 
-      - name: 1. 生成基础配置 + 修复NR_CPUS
+      - name: 1. 拉取并添加 KernelSU 源码
+        run: |
+          cd $GITHUB_WORKSPACE
+          curl -LSs https://github.com/tiann/KernelSU/archive/refs/tags/v0.9.5.tar.gz | tar -xz
+          mv KernelSU-0.9.5/kernel ./KernelSU
+          rm -rf KernelSU-0.9.5
+
+      - name: 2. 修改内核根目录 Makefile 引入 KSU
+        run: |
+          cd $GITHUB_WORKSPACE
+          sed -i '/core-y += kernel\/$/a core-y += KernelSU/' Makefile
+
+      - name: 3. 修改 Kconfig 引入 KSU 配置
+        run: |
+          cd $GITHUB_WORKSPACE
+          sed -i '/source "kernel\/Kconfig"/a source "KernelSU/Kconfig"' Kconfig
+
+      - name: 4. 修改 init/main.c 添加 KSU 初始化
+        run: |
+          cd $GITHUB_WORKSPACE
+          sed -i '/#include <linux\/sched.h>/a #include <linux\/ksu.h>' init/main.c
+          sed -i '/do_basic_setup();/a \    ksu_init();' init/main.c
+
+      - name: 5. 合并小米8 SE配置 + 修复NR_CPUS
         run: |
           cd $GITHUB_WORKSPACE
           COM=arch/arm64/configs/xiaomi/sdm710-common.config
@@ -31,36 +54,7 @@ jobs:
           
           ./scripts/kconfig/merge_config.sh -O . -m $COM $DEV
           sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
-
-      - name: 2. 按官方指南注入KSU配置
-        run: |
-          cd $GITHUB_WORKSPACE
-          echo "CONFIG_KALLSYMS=y" >> .config
-          echo "CONFIG_KALLSYMS_ALL=y" >> .config
-          echo "CONFIG_MODULES=y" >> .config
-          echo "CONFIG_MODULE_UNLOAD=y" >> .config
-          echo "CONFIG_KSU=y" >> .config
-          echo "CONFIG_KSU_NO_KPROBES=y" >> .config
           echo "# CONFIG_KPROBES is not set" >> .config
-          
-          make ARCH=arm64 olddefconfig
-
-      - name: 3. 按官方指南集成KernelSU 0.9.5
-        run: |
-          cd $GITHUB_WORKSPACE
-          curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh | bash -s v0.9.5
-
-      - name: 4. 终极修复：移除所有对probes模块的依赖
-        run: |
-          cd $GITHUB_WORKSPACE
-          # 1. 从内核主Makefile中移除probes模块的编译指令
-          sed -i '/obj-$(CONFIG_KPROBES)/d' arch/arm64/kernel/Makefile
-          # 2. 从modules.order中移除probes模块的引用
-          sed -i '/probes/d' arch/arm64/kernel/modules.order || true
-          # 3. 清空probes目录下的所有Makefile，防止生成built-in.o
-          echo "obj-y := " > arch/arm64/kernel/probes/Makefile
-          # 4. 创建一个空的built-in.o文件，欺骗链接器
-          touch arch/arm64/kernel/probes/built-in.o
 
       - name: Build Kernel (Clang + LLD)
         env:
@@ -79,5 +73,5 @@ jobs:
       - name: Upload Boot Image
         uses: actions/upload-artifact@v4
         with:
-          name: Mi8SE-Sirius-KSU095-Final-Boot
+          name: Mi8SE-Sirius-KSU095-Manual-Boot
           path: boot.img
