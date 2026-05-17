@@ -1,4 +1,4 @@
-name: Rocky7842 SDM710 (Mi8SE/pyxis) + KernelSU 0.9.5
+name: Rocky7842 SDM710 (Mi8SE/sirius) + KernelSU 0.9.5
 on:
   workflow_dispatch:
   push:
@@ -11,6 +11,7 @@ jobs:
       - name: Checkout Kernel Source
         uses: actions/checkout@v4
         with:
+          repository: Rocky7842/android_kernel_xiaomi_sdm710
           ref: lineage-23.0
           fetch-depth: 1
 
@@ -22,13 +23,13 @@ jobs:
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
             liblz4-tool lzop openssl
 
-      - name: 1. 生成基础pyxis配置 + 修复NR_CPUS
+      - name: 1. 生成小米8 SE 基础配置 + 修复NR_CPUS
         run: |
           cd $GITHUB_WORKSPACE
-          # 先生成pyxis的基础配置
-          make ARCH=arm64 pyxis_defconfig
+          # 关键：用小米8 SE 正确的配置文件名 sirius_defconfig
+          make ARCH=arm64 xiaomi_sirius_defconfig
           
-          # 修复NR_CPUS=8
+          # 修复NR_CPUS=8，解决tracepoint错误
           sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
 
       - name: 2. 注入KSU依赖项
@@ -63,5 +64,5 @@ jobs:
       - name: Upload Boot Image
         uses: actions/upload-artifact@v4
         with:
-          name: Mi8SE-Pyxis-KSU095-Boot
+          name: Mi8SE-Sirius-KSU095-Boot
           path: boot.img
