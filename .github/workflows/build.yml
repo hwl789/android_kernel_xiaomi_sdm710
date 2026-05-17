@@ -24,17 +24,26 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git toolchain
 
-      - name: Apply KernelSU configs to sdm710_defconfig
+      - name: Apply KernelSU configs
         run: |
           cd $GITHUB_WORKSPACE
-          DEFCONFIG=arch/arm64/configs/sdm710_defconfig
-          # 修复NR_CPUS问题
-          sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' $DEFCONFIG
-          # 启用KSU必需配置
-          sed -i 's/# CONFIG_KPROBES is not set/CONFIG_KPROBES=y/' $DEFCONFIG
-          sed -i 's/# CONFIG_KALLSYMS_ALL is not set/CONFIG_KALLSYMS_ALL=y/' $DEFCONFIG
-          sed -i 's/# CONFIG_MODULES is not set/CONFIG_MODULES=y/' $DEFCONFIG
-          sed -i 's/# CONFIG_MODULE_UNLOAD is not set/CONFIG_MODULE_UNLOAD=y/' $DEFCONFIG
+          COMMON=arch/arm64/configs/xiaomi/sdm710-common.config
+          DEV_CFG=arch/arm64/configs/xiaomi/pyxis.config
+          
+          sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' $COMMON
+          sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' $DEV_CFG
+
+          echo "CONFIG_KPROBES=y" >> $COMMON
+          echo "CONFIG_KALLSYMS_ALL=y" >> $COMMON
+          echo "CONFIG_MODULES=y" >> $COMMON
+          echo "CONFIG_MODULE_UNLOAD=y" >> $COMMON
+          echo "CONFIG_KSU=y" >> $COMMON
+
+          echo "CONFIG_KPROBES=y" >> $DEV_CFG
+          echo "CONFIG_KALLSYMS_ALL=y" >> $DEV_CFG
+          echo "CONFIG_MODULES=y" >> $DEV_CFG
+          echo "CONFIG_MODULE_UNLOAD=y" >> $DEV_CFG
+          echo "CONFIG_KSU=y" >> $DEV_CFG
 
       - name: Integrate KernelSU 0.9.5
         run: |
@@ -48,7 +57,7 @@ jobs:
           CROSS_COMPILE: aarch64-linux-android-
         run: |
           cd $GITHUB_WORKSPACE
-          make sdm710_defconfig
+          make pyxis_defconfig
           make -j$(nproc)
 
       - name: Prepare boot.img
@@ -58,5 +67,6 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sdm710-boot-with-ksu095
+          name: 小米8SE-pyxis-KSU095-boot
           path: boot.img
+        
