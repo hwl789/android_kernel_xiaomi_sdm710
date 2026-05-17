@@ -23,8 +23,7 @@ jobs:
             libssl-dev \
             libelf-dev \
             bc bison flex \
-            python3 zip unzip \
-            make gcc g++ cpio
+            python3 zip unzip cpio
 
       - name: Clone official LineageOS GCC 4.9 toolchain
         run: |
@@ -36,9 +35,11 @@ jobs:
           COMMON=arch/arm64/configs/xiaomi/sdm710-common.config
           DEV_CFG=arch/arm64/configs/xiaomi/pyxis.config
           
+          # 修改CPU核心数
           sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' $COMMON
           sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' $DEV_CFG
 
+          # 添加KernelSU依赖配置
           echo "CONFIG_KPROBES=y" >> $COMMON
           echo "CONFIG_KALLSYMS_ALL=y" >> $COMMON
           echo "CONFIG_MODULES=y" >> $COMMON
@@ -63,12 +64,18 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE
           export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
-          make pyxis_defconfig
-          make -j$(nproc)
+          
+          # 合并通用配置和设备配置，生成完整的.config
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- merge_defconfig \
+            O=out \
+            CONFIG_FILES="arch/arm64/configs/xiaomi/sdm710-common.config arch/arm64/configs/xiaomi/pyxis.config"
+          
+          # 开始编译
+          make -j$(nproc) O=out
 
       - name: Prepare boot.img
         run: |
-          cp $GITHUB_WORKSPACE/arch/arm64/boot/Image.gz-dtb $GITHUB_WORKSPACE/boot.img
+          cp $GITHUB_WORKSPACE/out/arch/arm64/boot/Image.gz-dtb $GITHUB_WORKSPACE/boot.img
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
