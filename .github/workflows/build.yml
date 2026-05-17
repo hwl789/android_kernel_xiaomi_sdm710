@@ -19,9 +19,10 @@ jobs:
           sudo apt update && sudo apt upgrade -y
           sudo apt install -y build-essential libssl-dev libelf-dev bc bison flex cpio zip unzip git
 
-      - name: Clone LineageOS GCC 4.9
+      # 替换为 GCC 11 工具链（满足内核版本要求）
+      - name: Clone GCC 11 Toolchain
         run: |
-          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git toolchain
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-11.git toolchain
 
       - name: Inject KernelSU Flags
         run: |
@@ -57,13 +58,13 @@ jobs:
           cd $GITHUB_WORKSPACE
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           
-          # 1. 合并两个配置文件生成临时 defconfig
+          # 合并配置文件
           cat arch/arm64/configs/xiaomi/sdm710-common.config arch/arm64/configs/xiaomi/pyxis.config > arch/arm64/configs/pyxis_defconfig
           
-          # 2. 使用合并后的配置生成 .config
+          # 生成 .config
           make pyxis_defconfig
           
-          # 3. 开始编译
+          # 编译内核
           make -j$(nproc)
 
       - name: Move Kernel Image
