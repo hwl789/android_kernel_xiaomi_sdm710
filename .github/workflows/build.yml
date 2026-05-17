@@ -20,21 +20,21 @@ jobs:
           sudo apt update -y
           sudo apt install -y build-essential libssl-dev libelf-dev bc bison flex python3 zip unzip
 
-      - name: Download Linaro GCC 7.5
+      - name: Clone official LineageOS GCC 4.9 toolchain
         run: |
-          wget https://releases.linaro.org/components/toolchain/binaries/latest-7/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
-          tar -xf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
-          echo "$PWD/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin" >> $GITHUB_PATH
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git toolchain
 
       - name: Apply KernelSU configs to sdm710_defconfig
         run: |
           cd $GITHUB_WORKSPACE
           DEFCONFIG=arch/arm64/configs/sdm710_defconfig
-          # 强制修改配置，不管文件是否存在注释
-          echo "CONFIG_KPROBES=y" >> $DEFCONFIG
-          echo "CONFIG_KALLSYMS_ALL=y" >> $DEFCONFIG
-          echo "CONFIG_MODULES=y" >> $DEFCONFIG
-          echo "CONFIG_MODULE_UNLOAD=y" >> $DEFCONFIG
+          # 修复NR_CPUS问题
+          sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' $DEFCONFIG
+          # 启用KSU必需配置
+          sed -i 's/# CONFIG_KPROBES is not set/CONFIG_KPROBES=y/' $DEFCONFIG
+          sed -i 's/# CONFIG_KALLSYMS_ALL is not set/CONFIG_KALLSYMS_ALL=y/' $DEFCONFIG
+          sed -i 's/# CONFIG_MODULES is not set/CONFIG_MODULES=y/' $DEFCONFIG
+          sed -i 's/# CONFIG_MODULE_UNLOAD is not set/CONFIG_MODULE_UNLOAD=y/' $DEFCONFIG
 
       - name: Integrate KernelSU 0.9.5
         run: |
@@ -43,8 +43,9 @@ jobs:
 
       - name: Build kernel
         env:
+          PATH: ${{ github.workspace }}/toolchain/bin:$PATH
           ARCH: arm64
-          CROSS_COMPILE: aarch64-linux-gnu-
+          CROSS_COMPILE: aarch64-linux-android-
         run: |
           cd $GITHUB_WORKSPACE
           make sdm710_defconfig
