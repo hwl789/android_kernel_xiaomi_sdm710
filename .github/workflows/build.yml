@@ -1,5 +1,4 @@
-name: SDM710 Kernel + KernelSU 0.9.5
-
+name: Rocky7842 SDM710 Kernel + KernelSU 0.9.5
 on:
   workflow_dispatch:
   push:
@@ -9,77 +8,64 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout kernel source
+      - name: Checkout Kernel Source
         uses: actions/checkout@v4
         with:
           ref: lineage-23.0
           fetch-depth: 1
 
-      - name: Install dependencies
+      - name: Install Build Dependencies
         run: |
-          sudo apt update -y
-          sudo apt install -y \
-            build-essential \
-            libssl-dev \
-            libelf-dev \
-            bc bison flex \
-            python3 zip unzip cpio
+          sudo apt update && sudo apt upgrade -y
+          sudo apt install -y build-essential libssl-dev libelf-dev bc bison flex cpio zip unzip git
 
-      - name: Clone official LineageOS GCC 4.9 toolchain
+      - name: Clone LineageOS GCC 4.9
         run: |
           git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git toolchain
 
-      - name: Apply KernelSU configs
+      - name: Inject KernelSU Flags
         run: |
           cd $GITHUB_WORKSPACE
-          COMMON=arch/arm64/configs/xiaomi/sdm710-common.config
-          DEV_CFG=arch/arm64/configs/xiaomi/pyxis.config
-          
-          # 修改CPU核心数
-          sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' $COMMON
-          sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' $DEV_CFG
+          COM=arch/arm64/configs/xiaomi/sdm710-common.config
+          DEV=arch/arm64/configs/xiaomi/pyxis.config
 
-          # 添加KernelSU依赖配置
-          echo "CONFIG_KPROBES=y" >> $COMMON
-          echo "CONFIG_KALLSYMS_ALL=y" >> $COMMON
-          echo "CONFIG_MODULES=y" >> $COMMON
-          echo "CONFIG_MODULE_UNLOAD=y" >> $COMMON
-          echo "CONFIG_KSU=y" >> $COMMON
+          sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' $COM
+          sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' $DEV
 
-          echo "CONFIG_KPROBES=y" >> $DEV_CFG
-          echo "CONFIG_KALLSYMS_ALL=y" >> $DEV_CFG
-          echo "CONFIG_MODULES=y" >> $DEV_CFG
-          echo "CONFIG_MODULE_UNLOAD=y" >> $DEV_CFG
-          echo "CONFIG_KSU=y" >> $DEV_CFG
+          echo "CONFIG_KPROBES=y" >> $COM
+          echo "CONFIG_KALLSYMS_ALL=y" >> $COM
+          echo "CONFIG_MODULES=y" >> $COM
+          echo "CONFIG_MODULE_UNLOAD=y" >> $COM
+          echo "CONFIG_KSU=y" >> $COM
+
+          echo "CONFIG_KPROBES=y" >> $DEV
+          echo "CONFIG_KALLSYMS_ALL=y" >> $DEV
+          echo "CONFIG_MODULES=y" >> $DEV
+          echo "CONFIG_MODULE_UNLOAD=y" >> $DEV
+          echo "CONFIG_KSU=y" >> $DEV
 
       - name: Integrate KernelSU 0.9.5
         run: |
           cd $GITHUB_WORKSPACE
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh" | bash -s v0.9.5
+          curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh | bash -s v0.9.5
 
-      - name: Build kernel
+      - name: Compile Rocky7842 Kernel
         env:
           ARCH: arm64
           CROSS_COMPILE: aarch64-linux-android-
         run: |
           cd $GITHUB_WORKSPACE
-          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
-          
-          # 合并通用配置和设备配置，生成完整的.config
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- merge_defconfig \
-            O=out \
-            CONFIG_FILES="arch/arm64/configs/xiaomi/sdm710-common.config arch/arm64/configs/xiaomi/pyxis.config"
-          
-          # 开始编译
-          make -j$(nproc) O=out
+          export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
+          make sdm710_defconfig
+          make -j$(nproc)
 
-      - name: Prepare boot.img
+      - name: Move Kernel Image
         run: |
-          cp $GITHUB_WORKSPACE/out/arch/arm64/boot/Image.gz-dtb $GITHUB_WORKSPACE/boot.img
+          cp arch/arm64/boot/Image.gz-dtb boot.img
 
-      - name: Upload artifact
+      - name: Upload Boot Image
         uses: actions/upload-artifact@v4
         with:
-          name: 小米8SE-pyxis-KSU095-boot
+          name: Rocky7842-Pyxis-KSU095-Boot
           path: boot.img
         
