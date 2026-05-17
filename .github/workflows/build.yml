@@ -19,49 +19,45 @@ jobs:
           sudo apt update && sudo apt upgrade -y
           sudo apt install -y \
             build-essential libssl-dev libelf-dev bc bison flex cpio zip unzip git libc6-dev-i386 \
-            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            liblz4-tool lzop openssl
 
-      - name: Inject KernelSU Flags
+      - name: Inject KernelSU Flags (Fixed NR_CPUS + Safe Merge)
         run: |
           cd $GITHUB_WORKSPACE
           COM=arch/arm64/configs/xiaomi/sdm710-common.config
           DEV=arch/arm64/configs/xiaomi/pyxis.config
-
+          
+          # 关键修复：设置SDM710正确的NR_CPUS值（8核），解决tracepoint编译错误
           sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' $COM
           sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' $DEV
 
-          echo "CONFIG_KPROBES=y" >> $COM
-          echo "CONFIG_KALLSYMS_ALL=y" >> $COM
-          echo "CONFIG_MODULES=y" >> $COM
-          echo "CONFIG_MODULE_UNLOAD=y" >> $COM
-          echo "CONFIG_KSU=y" >> $COM
-
-          echo "CONFIG_KPROBES=y" >> $DEV
-          echo "CONFIG_KALLSYMS_ALL=y" >> $DEV
-          echo "CONFIG_MODULES=y" >> $DEV
-          echo "CONFIG_MODULE_UNLOAD=y" >> $DEV
-          echo "CONFIG_KSU=y" >> $DEV
+          # 使用内核自带工具安全合并配置，避免cat拼接导致的冲突
+          ./scripts/kconfig/merge_config.sh -O . -m $COM $DEV
+          
+          # 注入KernelSU依赖配置
+          echo "CONFIG_KPROBES=y" >> .config
+          echo "CONFIG_KALLSYMS_ALL=y" >> .config
+          echo "CONFIG_MODULES=y" >> .config
+          echo "CONFIG_MODULE_UNLOAD=y" >> .config
+          echo "CONFIG_KSU=y" >> .config
+          
+          # 同步配置，确保所有依赖项生效
+          make olddefconfig
 
       - name: Integrate KernelSU 0.9.5
         run: |
           cd $GITHUB_WORKSPACE
           curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh | bash -s v0.9.5
 
-      - name: Generate and Build Config
+      - name: Generate and Build Config (保留完整日志)
         env:
           ARCH: arm64
           CROSS_COMPILE: aarch64-linux-gnu-
         run: |
           cd $GITHUB_WORKSPACE
-          
-          # 合并配置文件
-          cat arch/arm64/configs/xiaomi/sdm710-common.config arch/arm64/configs/xiaomi/pyxis.config > arch/arm64/configs/pyxis_defconfig
-          
-          # 生成 .config
-          make pyxis_defconfig
-          
-          # 编译内核（屏蔽非关键警告）
-          make -j$(nproc) KCFLAGS=-w
+          # 移除KCFLAGS=-w，保留完整编译日志，方便后续排查问题
+          make -j$(nproc) V=1
 
       - name: Move Kernel Image
         run: |
