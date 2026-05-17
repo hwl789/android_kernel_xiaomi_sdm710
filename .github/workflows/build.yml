@@ -24,7 +24,7 @@ jobs:
             libelf-dev \
             bc bison flex \
             python3 zip unzip \
-            make gcc g++
+            make gcc g++ cpio
 
       - name: Clone official LineageOS GCC 4.9 toolchain
         run: |
@@ -58,11 +58,11 @@ jobs:
 
       - name: Build kernel
         env:
-          PATH: ${{ github.workspace }}/toolchain/bin:$PATH
           ARCH: arm64
           CROSS_COMPILE: aarch64-linux-android-
         run: |
           cd $GITHUB_WORKSPACE
+          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
           make pyxis_defconfig
           make -j$(nproc)
 
