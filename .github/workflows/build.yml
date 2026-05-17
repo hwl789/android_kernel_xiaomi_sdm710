@@ -1,4 +1,4 @@
-name: Rocky7842 SDM710 (Mi8SE/sirius) + KernelSU 0.7.6
+name: Rocky7842 SDM710 (Mi8SE/sirius) + KSU0.7.6 (Clang+LLD)
 on:
   workflow_dispatch:
   push:
@@ -15,13 +15,12 @@ jobs:
           ref: lineage-23.0
           fetch-depth: 1
 
-      - name: Install ALL Build Dependencies
+      - name: Install Clang + LLD 依赖
         run: |
           sudo apt update && sudo apt upgrade -y
           sudo apt install -y \
-            build-essential libssl-dev libelf-dev bc bison flex cpio zip unzip git libc6-dev-i386 \
-            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-            liblz4-tool lzop openssl
+            build-essential libssl-dev libelf-dev bc bison flex cpio zip unzip git \
+            libc6-dev-i386 liblz4-tool lzop openssl clang lld
 
       - name: 1. 合并小米8 SE配置 + 修复NR_CPUS
         run: |
@@ -34,7 +33,7 @@ jobs:
           # 修复NR_CPUS=8
           sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
 
-      - name: 2. 注入KSU稳定基础配置
+      - name: 2. 注入KSU配置 + 彻底禁用kprobes
         run: |
           cd $GITHUB_WORKSPACE
           echo "CONFIG_KALLSYMS=y" >> .config
@@ -42,18 +41,27 @@ jobs:
           echo "CONFIG_MODULES=y" >> .config
           echo "CONFIG_MODULE_UNLOAD=y" >> .config
           echo "CONFIG_KSU=y" >> .config
+          # 强制禁用kprobes，避免链接错误
+          echo "# CONFIG_KPROBES is not set" >> .config
           
           make ARCH=arm64 olddefconfig
+
+      - name: 3. 物理删除probes模块（双重保险）
+        run: |
+          cd $GITHUB_WORKSPACE
+          rm -rf arch/arm64/kernel/probes/
 
       - name: Integrate KernelSU 0.7.6
         run: |
           cd $GITHUB_WORKSPACE
           curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/v0.7.6/kernel/setup.sh | bash -s v0.7.6
 
-      - name: Build Kernel (完整日志)
+      - name: Build Kernel (Clang + LLD)
         env:
           ARCH: arm64
+          CC: clang
           CROSS_COMPILE: aarch64-linux-gnu-
+          LD: ld.lld
         run: |
           cd $GITHUB_WORKSPACE
           make -j$(nproc) V=1
@@ -65,5 +73,5 @@ jobs:
       - name: Upload Boot Image
         uses: actions/upload-artifact@v4
         with:
-          name: Mi8SE-Sirius-KSU076-Boot
+          name: Mi8SE-Sirius-KSU076-Clang-Boot
           path: boot.img
