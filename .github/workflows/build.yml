@@ -1,4 +1,4 @@
-name: Rocky7842 SDM710 (Mi8SE/sirius) + KernelSU 0.9.5
+name: Rocky7842 SDM710 (Mi8SE) + KernelSU 0.9.5
 on:
   workflow_dispatch:
   push:
@@ -23,11 +23,19 @@ jobs:
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
             liblz4-tool lzop openssl
 
+      - name: 🔍 列出所有设备配置文件
+        run: |
+          cd $GITHUB_WORKSPACE
+          echo "=== 所有设备配置文件 ==="
+          ls -la arch/arm64/configs/
+          echo "=== Xiaomi 子目录配置文件 ==="
+          ls -la arch/arm64/configs/xiaomi/
+
       - name: 1. 生成小米8 SE 基础配置 + 修复NR_CPUS
         run: |
           cd $GITHUB_WORKSPACE
-          # 关键：用小米8 SE 正确的配置文件名 sirius_defconfig
-          make ARCH=arm64 xiaomi_sirius_defconfig
+          # 先尝试通用SDM710配置，再根据上面的列表替换
+          make ARCH=arm64 sdm710_defconfig || make ARCH=arm64 lineageos_sirius_defconfig || make ARCH=arm64 xiaomi_sirius_defconfig || make ARCH=arm64 sirius_defconfig
           
           # 修复NR_CPUS=8，解决tracepoint错误
           sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
@@ -64,5 +72,5 @@ jobs:
       - name: Upload Boot Image
         uses: actions/upload-artifact@v4
         with:
-          name: Mi8SE-Sirius-KSU095-Boot
+          name: Mi8SE-Kernel-KSU095-Boot
           path: boot.img
