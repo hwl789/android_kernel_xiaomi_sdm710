@@ -21,10 +21,14 @@ jobs:
           git config --global credential.helper cache
           git config --global http.sslVerify false
 
-      # 改用 LineageOS 官方 GCC 10 工具链，命名完全匹配 aarch64-linux-android-
-      - name: Clone GCC 10 Toolchain
+      # 改用 wget 直接下载 GCC 10 工具链压缩包，绕过 git 网络问题
+      - name: Download GCC 10 Toolchain
         run: |
-          git clone --depth=1 https://mirror.ghproxy.com/https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-10.git toolchain
+          wget -O gcc10.tar.xz https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/tags/android-10.0.0_r47.tar.gz
+          tar -xzf gcc10.tar.xz -C toolchain --strip-components=1 || \
+          # 备用下载源
+          wget -O gcc10.tar.gz https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-10/archive/refs/heads/lineage-20.0.tar.gz && \
+          mkdir -p toolchain && tar -xzf gcc10.tar.gz -C toolchain --strip-components=1
 
       # 验证工具链路径和二进制文件
       - name: Verify Toolchain
