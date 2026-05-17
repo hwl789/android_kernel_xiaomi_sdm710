@@ -1,4 +1,4 @@
-name: Rocky7842 SDM710 (Mi8SE/sirius) + KernelSU 0.9.5 (kprobe修复)
+name: Rocky7842 SDM710 (Mi8SE/sirius) + KernelSU 0.9.5
 on:
   workflow_dispatch:
   push:
@@ -15,12 +15,13 @@ jobs:
           ref: lineage-23.0
           fetch-depth: 1
 
-      - name: Install Clang + LLD 依赖
+      - name: Install Full Toolchain (GCC + Clang)
         run: |
           sudo apt update && sudo apt upgrade -y
           sudo apt install -y \
             build-essential libssl-dev libelf-dev bc bison flex cpio zip unzip git \
-            libc6-dev-i386 liblz4-tool lzop openssl clang lld
+            libc6-dev-i386 liblz4-tool lzop openssl \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu clang lld
 
       - name: 1. 合并小米8 SE配置 + 修复NR_CPUS
         run: |
@@ -32,7 +33,7 @@ jobs:
           
           sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
 
-      - name: 2. 注入0.9.5兼容配置（核心修复）
+      - name: 2. 注入0.9.5专用兼容配置
         run: |
           cd $GITHUB_WORKSPACE
           echo "CONFIG_KALLSYMS=y" >> .config
@@ -42,24 +43,22 @@ jobs:
           echo "CONFIG_KSU=y" >> .config
           # 关键：开启无kprobes模式，KSU自动适配
           echo "CONFIG_KSU_NO_KPROBES=y" >> .config
+          # 禁用kprobes，避免内核尝试编译它
+          echo "# CONFIG_KPROBES is not set" >> .config
           
           make ARCH=arm64 olddefconfig
 
-      - name: 3. 手动修改内核源码，彻底禁用kprobes模块
+      - name: 3. 物理删除probes模块，彻底避免链接错误
         run: |
           cd $GITHUB_WORKSPACE
-          # 1. 注释掉probes目录的编译指令
-          sed -i 's/obj-$(CONFIG_KPROBES)/# obj-$(CONFIG_KPROBES)/g' arch/arm64/kernel/Makefile
-          # 2. 清空probes目录的Makefile，防止生成built-in.o
-          echo "# Probes module disabled" > arch/arm64/kernel/probes/Makefile
-          echo "obj-y := " >> arch/arm64/kernel/probes/Makefile
+          rm -rf arch/arm64/kernel/probes/
 
       - name: Integrate KernelSU 0.9.5
         run: |
           cd $GITHUB_WORKSPACE
           curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh | bash -s v0.9.5
 
-      - name: Build Kernel (Clang + LLD)
+      - name: Build Kernel (Clang + LLD + GCC fallback)
         env:
           ARCH: arm64
           CC: clang
