@@ -1,4 +1,4 @@
-name: Mi8SE/Rocky7842 + KernelSU 0.9.5 (官方指南版)
+name: Mi8SE/Rocky7842 + KernelSU 0.9.5 (终极修复版)
 on:
   workflow_dispatch:
   push:
@@ -40,8 +40,8 @@ jobs:
           echo "CONFIG_MODULES=y" >> .config
           echo "CONFIG_MODULE_UNLOAD=y" >> .config
           echo "CONFIG_KSU=y" >> .config
-          # 官方推荐：非GKI内核如果kprobes有问题，开启这个选项
           echo "CONFIG_KSU_NO_KPROBES=y" >> .config
+          echo "# CONFIG_KPROBES is not set" >> .config
           
           make ARCH=arm64 olddefconfig
 
@@ -50,14 +50,17 @@ jobs:
           cd $GITHUB_WORKSPACE
           curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh | bash -s v0.9.5
 
-      - name: 4. 禁用kprobes编译（彻底解决链接错误）
+      - name: 4. 终极修复：移除所有对probes模块的依赖
         run: |
           cd $GITHUB_WORKSPACE
-          # 注释掉probes目录的编译指令，让构建脚本不进入该目录
-          sed -i 's/obj-$(CONFIG_KPROBES)/# obj-$(CONFIG_KPROBES)/g' arch/arm64/kernel/Makefile
-          # 清空probes目录的Makefile，防止生成built-in.o
-          echo "# Probes module disabled" > arch/arm64/kernel/probes/Makefile
-          echo "obj-y := " >> arch/arm64/kernel/probes/Makefile
+          # 1. 从内核主Makefile中移除probes模块的编译指令
+          sed -i '/obj-$(CONFIG_KPROBES)/d' arch/arm64/kernel/Makefile
+          # 2. 从modules.order中移除probes模块的引用
+          sed -i '/probes/d' arch/arm64/kernel/modules.order || true
+          # 3. 清空probes目录下的所有Makefile，防止生成built-in.o
+          echo "obj-y := " > arch/arm64/kernel/probes/Makefile
+          # 4. 创建一个空的built-in.o文件，欺骗链接器
+          touch arch/arm64/kernel/probes/built-in.o
 
       - name: Build Kernel (Clang + LLD)
         env:
@@ -76,5 +79,5 @@ jobs:
       - name: Upload Boot Image
         uses: actions/upload-artifact@v4
         with:
-          name: Mi8SE-Sirius-KSU095-Official-Boot
+          name: Mi8SE-Sirius-KSU095-Final-Boot
           path: boot.img
