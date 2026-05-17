@@ -1,4 +1,4 @@
-name: Rocky7842 SDM710 Kernel + KernelSU 0.9.5
+name: Rocky7842 SDM710 (Mi8SE/pyxis) + KernelSU 0.9.5
 on:
   workflow_dispatch:
   push:
@@ -22,41 +22,38 @@ jobs:
             gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
             liblz4-tool lzop openssl
 
-      - name: Inject KernelSU Flags (Fixed NR_CPUS + Safe Merge)
+      - name: 1. 生成基础pyxis配置 + 修复NR_CPUS
         run: |
           cd $GITHUB_WORKSPACE
-          COM=arch/arm64/configs/xiaomi/sdm710-common.config
-          DEV=arch/arm64/configs/xiaomi/pyxis.config
+          # 先生成pyxis的基础配置
+          make ARCH=arm64 pyxis_defconfig
           
-          # 关键修复：设置SDM710正确的NR_CPUS值（8核），解决tracepoint编译错误
-          sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' $COM
-          sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' $DEV
+          # 修复NR_CPUS=8
+          sed -i 's/CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
 
-          # 使用内核自带工具安全合并配置，避免cat拼接导致的冲突
-          ./scripts/kconfig/merge_config.sh -O . -m $COM $DEV
-          
-          # 注入KernelSU依赖配置
+      - name: 2. 注入KSU依赖项
+        run: |
+          cd $GITHUB_WORKSPACE
           echo "CONFIG_KPROBES=y" >> .config
           echo "CONFIG_KALLSYMS_ALL=y" >> .config
           echo "CONFIG_MODULES=y" >> .config
           echo "CONFIG_MODULE_UNLOAD=y" >> .config
           echo "CONFIG_KSU=y" >> .config
           
-          # 同步配置，确保所有依赖项生效
-          make olddefconfig
+          # 同步配置，解决依赖冲突
+          make ARCH=arm64 olddefconfig
 
       - name: Integrate KernelSU 0.9.5
         run: |
           cd $GITHUB_WORKSPACE
           curl -LSs https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh | bash -s v0.9.5
 
-      - name: Generate and Build Config (保留完整日志)
+      - name: Build Kernel (完整日志)
         env:
           ARCH: arm64
           CROSS_COMPILE: aarch64-linux-gnu-
         run: |
           cd $GITHUB_WORKSPACE
-          # 移除KCFLAGS=-w，保留完整编译日志，方便后续排查问题
           make -j$(nproc) V=1
 
       - name: Move Kernel Image
@@ -66,5 +63,5 @@ jobs:
       - name: Upload Boot Image
         uses: actions/upload-artifact@v4
         with:
-          name: Rocky7842-Pyxis-KSU095-Boot
+          name: Mi8SE-Pyxis-KSU095-Boot
           path: boot.img
