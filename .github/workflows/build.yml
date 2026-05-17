@@ -18,7 +18,13 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update -y
-          sudo apt install -y build-essential libssl-dev libelf-dev bc bison flex python3 zip unzip
+          sudo apt install -y \
+            build-essential \
+            libssl-dev \
+            libelf-dev \
+            bc bison flex \
+            python3 zip unzip \
+            make gcc g++
 
       - name: Clone official LineageOS GCC 4.9 toolchain
         run: |
