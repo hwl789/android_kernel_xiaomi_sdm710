@@ -24,16 +24,16 @@ jobs:
           git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchain --depth=1
           echo "TOOLCHAIN=$GITHUB_WORKSPACE/toolchain/bin" >> $GITHUB_ENV
 
-      - name: 4. 加载正确的 defconfig（修复路径问题）
+      - name: 4. 加载正确的 defconfig
         run: |
-          # 先列出 configs 目录确认文件位置
-          ls -la arch/arm64/configs/
-          # 用仓库实际存在的 sdm710_defconfig
-          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- sdm710_defconfig
+          # 列出 xiaomi 子目录确认文件
+          ls -la arch/arm64/configs/xiaomi/
+          # 用仓库实际存在的路径
+          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- xiaomi/sdm710_defconfig
           # 强制开启KSU必须项
           echo -e "CONFIG_KPROBES=y\nCONFIG_KPROBE_EVENTS=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y" >> .config
           make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- savedefconfig
-          cp defconfig arch/arm64/configs/sdm710_defconfig
+          cp defconfig arch/arm64/configs/xiaomi/sdm710_defconfig
 
       - name: 5. 编译内核
         env:
