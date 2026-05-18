@@ -24,22 +24,21 @@ jobs:
           git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchain --depth=1
           echo "TOOLCHAIN=$GITHUB_WORKSPACE/toolchain/bin" >> $GITHUB_ENV
 
-      - name: 4. 生成并配置内核（含KSU）
+      - name: 4. 生成内核配置（含KSU）
         run: |
-          # 先基于通用配置生成基础.config，再合并设备配置
-          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- sdm710-common.config
+          # 直接加载设备配置，它会自动生成.config
           make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- xiaomi/sirius.config
           # 强制开启KSU必须项
           echo -e "CONFIG_KPROBES=y\nCONFIG_KPROBE_EVENTS=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y" >> .config
-          # 验证.config是否生成成功
+          # 验证配置是否正确生成
           ls -la .config
+          grep -i "ksu\|kprobe" .config
 
       - name: 5. 编译内核
         env:
           ARCH: arm64
           CROSS_COMPILE: ${{ env.TOOLCHAIN }}/aarch64-linux-android-
         run: |
-          # 这里不能再用mrproper/clean！会把刚生成的.config清掉
           make -j$(nproc) Image.gz-dtb modules
 
       - name: 6. 下载小米8 SE 通用原厂boot.img（适配Lineage-23.2）
