@@ -16,34 +16,41 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: 2. 更换APT为清华源 + 一键安装所有依赖+交叉编译器
+      - name: 2. 更换APT为清华源 + 开启universe源 + 安装依赖
         run: |
           sudo sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
           sudo sed -i 's/security.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
+          # 强制开启universe仓库
+          sudo add-apt-repository universe
           sudo apt update -y
-          # 直接安装aarch64交叉编译器，替代GCC4.9，完美兼容SDM710内核
-          sudo apt install -y build-essential gcc-multilib g++-multilib libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg aarch64-linux-gnu-gcc aarch64-linux-gnu-g++
-          echo "TOOLCHAIN=/usr/bin/aarch64-linux-gnu-" >> $GITHUB_ENV
+          sudo apt install -y build-essential gcc-multilib g++-multilib libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg
 
-      - name: 3. 生成内核配置（强制开启KSU）
+      - name: 3. 下载 GCC 4.9 工具链（中科大镜像直链，永久可用，无404）
         run: |
-          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN} sdm710-common.config
-          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN} sirius.config
+          wget https://mirrors.ustc.edu.cn/android/android/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9_r24.tar.xz
+          mkdir -p toolchain
+          tar -xf aarch64-linux-android-4.9_r24.tar.xz -C toolchain --strip-components=1
+          echo "TOOLCHAIN=$GITHUB_WORKSPACE/toolchain/bin" >> $GITHUB_ENV
+
+      - name: 4. 生成内核配置（强制开启KSU）
+        run: |
+          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- sdm710-common.config
+          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- sirius.config
           echo -e "CONFIG_KPROBES=y\nCONFIG_KPROBE_EVENTS=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y" >> .config
           grep -i "ksu\|kprobe" .config
 
-      - name: 4. 编译内核
+      - name: 5. 编译内核
         env:
           ARCH: arm64
-          CROSS_COMPILE: ${{ env.TOOLCHAIN }}
+          CROSS_COMPILE: ${{ env.TOOLCHAIN }}/aarch64-linux-android-
         run: |
           make -j$(nproc) Image.gz-dtb modules
 
-      - name: 5. 下载原厂boot.img
+      - name: 6. 下载原厂boot.img
         run: |
           wget https://github.com/Rocky7842/android_kernel_xiaomi_sdm710/releases/download/lineage-23.2/stock_boot.img -O stock_boot.img
 
-      - name: 6. 打包带KSU的boot.img
+      - name: 7. 打包带KSU的boot.img
         run: |
           unpackbootimg -i stock_boot.img
           cp arch/arm64/boot/Image.gz-dtb stock_boot.img-zImage
@@ -55,7 +62,7 @@ jobs:
             --pagesize 4096 \
             -o KSU_sirius_boot.img
 
-      - name: 7. 上传成品
+      - name: 8. 上传成品
         uses: actions/upload-artifact@v4
         with:
           name: KSU‑Sirius‑Boot‑Image
