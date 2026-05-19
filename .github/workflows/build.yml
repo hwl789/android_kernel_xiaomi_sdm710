@@ -8,7 +8,7 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: 1. 拉取内核源码（原生官方，不使用加速代理避免解析失败）
+      - name: 1. 拉取内核源码
         uses: actions/checkout@v4
         with:
           repository: hwl789/android_kernel_xiaomi_sdm710
@@ -23,9 +23,9 @@ jobs:
           sudo apt update -y
           sudo apt install -y build-essential gcc-multilib g++-multilib libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg
 
-      - name: 3. 下载 GCC 4.9 工具链（LineageOS官方包，稳定）
+      - name: 3. 下载 GCC 4.9 工具链（稳定归档版，无404）
         run: |
-          wget https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9/archive/refs/heads/lineage-20.tar.gz -O gcc.tar.gz
+          wget https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9/archive/refs/tags/lineage-19.1.tar.gz -O gcc.tar.gz
           mkdir -p toolchain
           tar -zxvf gcc.tar.gz -C toolchain --strip-components=1
           echo "TOOLCHAIN=$GITHUB_WORKSPACE/toolchain/bin" >> $GITHUB_ENV
@@ -44,7 +44,7 @@ jobs:
         run: |
           make -j$(nproc) Image.gz-dtb modules
 
-      - name: 6. 下载适配Lineage‑23.2的原厂boot.img
+      - name: 6. 下载原厂boot.img
         run: |
           wget https://github.com/Rocky7842/android_kernel_xiaomi_sdm710/releases/download/lineage-23.2/stock_boot.img -O stock_boot.img
 
@@ -60,7 +60,7 @@ jobs:
             --pagesize 4096 \
             -o KSU_sirius_boot.img
 
-      - name: 8. 上传编译成品boot.img
+      - name: 8. 上传成品
         uses: actions/upload-artifact@v4
         with:
           name: KSU‑Sirius‑Boot‑Image
