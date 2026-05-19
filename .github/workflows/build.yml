@@ -36,16 +36,13 @@ jobs:
 
       - name: 4. 生成并配置内核（含 KSU）
         run: |
-          set -e  # 遇到错误立即退出
+          set -e
           export ARCH=arm64
           export CROSS_COMPILE=$TOOLCHAIN/aarch64-linux-android-
 
-          # 生成基础配置
           make arch/arm64/configs/xiaomi/sdm710-common.config
-          # 合并 Sirius 设备配置
           make arch/arm64/configs/xiaomi/sirius.config
 
-          # 启用 KSU 及相关依赖
           echo -e "\
 CONFIG_KPROBES=y\n\
 CONFIG_KPROBE_EVENTS=y\n\
@@ -54,7 +51,6 @@ CONFIG_MODULE_UNLOAD=y\n\
 CONFIG_KSU=y\n\
 " >> .config
 
-          # 自动补齐缺失符号，避免编译报错
           make olddefconfig
 
       - name: 5. 编译内核
@@ -74,15 +70,11 @@ CONFIG_KSU=y\n\
       - name: 7. 打包 KSU boot.img
         run: |
           set -e
-          # 解析原厂 boot.img 信息
           unpackbootimg -i stock_boot.img
           
-          # 复制新内核
           cp arch/arm64/boot/Image.gz-dtb stock_boot.img-zImage
 
-          # 使用原厂参数打包（更安全）- 重构为 Block Scalar 格式，避免 L50 缩进错误
           mkbootimg \
-          | mkbootimg \
             --kernel stock_boot.img-zImage \
             --ramdisk stock_boot.img-ramdisk.gz \
             --cmdline "$(cat stock_boot.img-cmdline)" \
