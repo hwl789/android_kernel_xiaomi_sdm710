@@ -28,11 +28,11 @@ jobs:
           git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchain --depth=1
           echo "TOOLCHAIN=$GITHUB_WORKSPACE/toolchain/bin" >> $GITHUB_ENV
 
-      - name: 4. 生成内核配置（标准defconfig语法，强制开启KSU）
+      - name: 4. 生成内核配置（正确子目录格式，强制开启KSU）
         run: |
-          # 标准安卓内核语法，ARCH自动匹配arch/arm64/configs/xiaomi/
-          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- sdm710-common
-          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- sirius
+          # 正确格式：文件夹名/配置文件名.config
+          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- xiaomi/sdm710-common.config
+          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- xiaomi/sirius.config
           
           echo -e "CONFIG_KPROBES=y\nCONFIG_KPROBE_EVENTS=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y" >> .config
           grep -i "ksu\|kprobe" .config
