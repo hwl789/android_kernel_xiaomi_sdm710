@@ -8,51 +8,55 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: 1. 极速拉取【你自己Fork的】内核源码（ghproxy加速）
-        run: |
-          git clone --depth=1 --single-branch -b lineage-23.2-ksu \
-            https://mirror.ghproxy.com/https://github.com/hwl789/android_kernel_xiaomi_sdm710.git kernel
-          cd kernel
-          git submodule update --init --recursive
-          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE/kernel" >> $GITHUB_ENV
+      # 1. 官方标准拉取源码 + ghproxy加速，稳定不报错
+      - name: 1. 拉取内核源码（加速）
+        uses: actions/checkout@v4
+        with:
+          repository: hwl789/android_kernel_xiaomi_sdm710
+          ref: lineage-23.2-ksu
+          submodules: recursive
+          fetch-depth: 1
+          github-server-url: https://mirror.ghproxy.com/https://github.com
 
+      # 2. 清华源安装依赖
       - name: 2. 更换APT为清华源 + 安装依赖
         run: |
           sudo sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
           sudo sed -i 's/security.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
           sudo apt update -y
           sudo apt install -y build-essential gcc-multilib g++-multilib libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg
-        working-directory: ${{ env.GITHUB_WORKSPACE }}
 
-      - name: 3. 下载 GCC 4.9 工具链（ghproxy加速谷歌官方包，永久可用）
+      # 3. 稳定可用的GCC4.9工具链（直接下载二进制包，无404、无排队）
+      - name: 3. 下载 GCC 4.9 工具链
         run: |
-          wget https://mirror.ghproxy.com/https://dl.google.com/android/android/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9_r24.tar.xz
-          tar -xf aarch64-linux-android-4.9_r24.tar.xz -C toolchain --strip-components=1
+          wget https://mirror.ghproxy.com/https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9/archive/refs/heads/lineage-20.tar.gz -O gcc.tar.gz
+          mkdir -p toolchain
+          tar -zxvf gcc.tar.gz -C toolchain --strip-components=1
           echo "TOOLCHAIN=$GITHUB_WORKSPACE/toolchain/bin" >> $GITHUB_ENV
-        working-directory: ${{ env.GITHUB_WORKSPACE }}
 
+      # 4. 内核配置 + 强制开启KSU
       - name: 4. 生成内核配置（强制开启KSU）
         run: |
           make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- sdm710-common.config
           make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- sirius.config
           echo -e "CONFIG_KPROBES=y\nCONFIG_KPROBE_EVENTS=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y" >> .config
           grep -i "ksu\|kprobe" .config
-        working-directory: ${{ env.GITHUB_WORKSPACE }}
 
+      # 5. 编译内核
       - name: 5. 编译内核
         env:
           ARCH: arm64
           CROSS_COMPILE: ${{ env.TOOLCHAIN }}/aarch64-linux-android-
         run: |
           make -j$(nproc) Image.gz-dtb modules
-        working-directory: ${{ env.GITHUB_WORKSPACE }}
 
-      - name: 6. 加速下载原厂boot.img
+      # 6. 加速下载原厂boot.img
+      - name: 6. 下载适配Lineage‑23.2的原厂boot.img
         run: |
           wget https://mirror.ghproxy.com/https://github.com/Rocky7842/android_kernel_xiaomi_sdm710/releases/download/lineage-23.2/stock_boot.img -O stock_boot.img
-        working-directory: ${{ env.GITHUB_WORKSPACE }}
 
-      - name: 7. 打包KSU boot.img
+      # 7. 打包KSU boot.img
+      - name: 7. 打包带KSU的boot.img
         run: |
           unpackbootimg -i stock_boot.img
           cp arch/arm64/boot/Image.gz-dtb stock_boot.img-zImage
@@ -63,10 +67,10 @@ jobs:
             --base 0x80000000 \
             --pagesize 4096 \
             -o KSU_sirius_boot.img
-        working-directory: ${{ env.GITHUB_WORKSPACE }}
 
-      - name: 8. 上传成品
+      # 8. 上传成品
+      - name: 8. 上传编译成品boot.img
         uses: actions/upload-artifact@v4
         with:
           name: KSU‑Sirius‑Boot‑Image
-          path: ${{ env.GITHUB_WORKSPACE }}/KSU_sirius_boot.img
+          path: KSU_sirius_boot.img
