@@ -23,11 +23,9 @@ jobs:
           sudo apt update -y
           sudo apt install -y build-essential libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg
 
-      - name: 3. 下载Rocky7842适配好的GCC4.9工具链（100%兼容，无403/404）
+      - name: 3. ghproxy加速拉取官方GCC4.9（谷歌官方仓库，永不404）
         run: |
-          wget https://github.com/Rocky7842/android_kernel_xiaomi_sdm710/releases/download/toolchain/aarch64-linux-android-4.9.tar.xz -O gcc.tar.xz
-          mkdir -p toolchain
-          tar -xf gcc.tar.xz -C toolchain --strip-components=1
+          git clone https://mirror.ghproxy.com/https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchain --depth=1
           echo "TOOLCHAIN=$GITHUB_WORKSPACE/toolchain/bin" >> $GITHUB_ENV
 
       - name: 4. 生成内核配置（强制开启KSU）
