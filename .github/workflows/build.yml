@@ -23,9 +23,9 @@ jobs:
           sudo apt update -y
           sudo apt install -y build-essential libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg
 
-      - name: 3. ghproxy加速拉取官方GCC4.9（谷歌官方仓库，永不404）
+      - name: 3. 原生git拉取谷歌官方GCC4.9（**无任何代理**）
         run: |
-          git clone https://mirror.ghproxy.com/https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchain --depth=1
+          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchain --depth=1
           echo "TOOLCHAIN=$GITHUB_WORKSPACE/toolchain/bin" >> $GITHUB_ENV
 
       - name: 4. 生成内核配置（强制开启KSU）
