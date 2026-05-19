@@ -15,7 +15,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: lineage-23.2-ksu
-          submodules: recursive   # ✅ 关键修复
+          submodules: recursive
 
       - name: 2. 安装编译依赖
         run: |
@@ -24,9 +24,10 @@ jobs:
             build-essential gcc-multilib g++-multilib \
             libssl-dev bc lz4 unzip curl python3 \
             android-sdk-libsparse-utils \
-            bison flex libelf-dev
+            bison flex libelf-dev \
+            liblz4-tool
 
-      - name: 3. 下载 GCC 4.9 工具链（稳定镜像）
+      - name: 3. 下载 GCC 4.9 工具链（清华源）
         run: |
           git clone --depth=1 \
             https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 \
@@ -35,6 +36,7 @@ jobs:
 
       - name: 4. 生成并配置内核（含 KSU）
         run: |
+          set -e  # 遇到错误立即退出
           export ARCH=arm64
           export CROSS_COMPILE=$TOOLCHAIN/aarch64-linux-android-
 
@@ -43,7 +45,7 @@ jobs:
           # 合并 Sirius 设备配置
           make arch/arm64/configs/xiaomi/sirius.config
 
-          # 启用 KSU
+          # 启用 KSU 及相关依赖
           echo -e "\
 CONFIG_KPROBES=y\n\
 CONFIG_KPROBE_EVENTS=y\n\
@@ -52,7 +54,7 @@ CONFIG_MODULE_UNLOAD=y\n\
 CONFIG_KSU=y\n\
 " >> .config
 
-          # 自动补齐缺失符号
+          # 自动补齐缺失符号，避免编译报错
           make olddefconfig
 
       - name: 5. 编译内核
@@ -60,19 +62,25 @@ CONFIG_KSU=y\n\
           ARCH: arm64
           CROSS_COMPILE: ${{ env.TOOLCHAIN }}/aarch64-linux-android-
         run: |
+          set -e
           make -j$(nproc) Image.gz-dtb
 
       - name: 6. 下载原厂 boot.img
         run: |
+          set -e
           wget -O stock_boot.img \
             https://github.com/Rocky7842/android_kernel_xiaomi_sdm710/releases/download/lineage-23.2/stock_boot.img
 
       - name: 7. 打包 KSU boot.img
         run: |
+          set -e
+          # 解析原厂 boot.img 信息
           unpackbootimg -i stock_boot.img
-
+          
+          # 复制新内核
           cp arch/arm64/boot/Image.gz-dtb stock_boot.img-zImage
 
+          # 使用原厂参数打包（更安全）
           mkbootimg \
             --kernel stock_boot.img-zImage \
             --ramdisk stock_boot.img-ramdisk.gz \
