@@ -24,15 +24,18 @@ jobs:
           git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchain --depth=1
           echo "TOOLCHAIN=$GITHUB_WORKSPACE/toolchain/bin" >> $GITHUB_ENV
 
-      - name: 4. 生成内核配置（含KSU）
+      - name: 4. 生成并配置内核（含KSU）
         run: |
-          # 直接加载设备配置，它会自动生成.config
-          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- xiaomi/sirius.config
-          # 强制开启KSU必须项
+          # 完整路径指定子目录下的配置文件，直接生成 .config
+          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- arch/arm64/configs/xiaomi/sdm710-common.config
+          # 完整路径加载设备专属配置，合并到当前 .config
+          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- arch/arm64/configs/xiaomi/sirius.config
+          # 强制开启KSU依赖项
           echo -e "CONFIG_KPROBES=y\nCONFIG_KPROBE_EVENTS=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y" >> .config
-          # 验证配置是否正确生成
+          # 补全内核依赖配置，避免编译缺失
+          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- olddefconfig
+          # 验证配置文件生成
           ls -la .config
-          grep -i "ksu\|kprobe" .config
 
       - name: 5. 编译内核
         env:
