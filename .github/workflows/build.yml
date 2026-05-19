@@ -80,17 +80,18 @@ CONFIG_KSU=y\n\
           # 复制新内核
           cp arch/arm64/boot/Image.gz-dtb stock_boot.img-zImage
 
-          # 使用原厂参数打包（更安全）
+          # 使用原厂参数打包（更安全）- 重构为 Block Scalar 格式，避免 L50 缩进错误
           mkbootimg \
+          | mkbootimg \
             --kernel stock_boot.img-zImage \
             --ramdisk stock_boot.img-ramdisk.gz \
             --cmdline "$(cat stock_boot.img-cmdline)" \
-            --base $(cat stock_boot.img-base) \
-            --pagesize $(cat stock_boot.img-pagesize) \
-            --kernel_offset $(cat stock_boot.img-kernel_offset) \
-            --ramdisk_offset $(cat stock_boot.img-ramdisk_offset) \
-            --second_offset $(cat stock_boot.img-second_offset) \
-            --tags_offset $(cat stock_boot.img-tags_offset) \
+            --base "$(cat stock_boot.img-base)" \
+            --pagesize "$(cat stock_boot.img-pagesize)" \
+            --kernel_offset "$(cat stock_boot.img-kernel_offset)" \
+            --ramdisk_offset "$(cat stock_boot.img-ramdisk_offset)" \
+            --second_offset "$(cat stock_boot.img-second_offset)" \
+            --tags_offset "$(cat stock_boot.img-tags_offset)" \
             -o KSU_sirius_boot.img
 
       - name: 8. 上传产物
