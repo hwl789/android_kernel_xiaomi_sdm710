@@ -23,9 +23,10 @@ jobs:
           sudo apt update -y
           sudo apt install -y build-essential gcc-multilib g++-multilib libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg
 
-      - name: 3. 清华源下载 GCC 4.9 工具链
+      - name: 3. 国内直链下载 GCC 4.9 工具链（彻底解决排队）
         run: |
-          git clone https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9.git toolchain --depth=1
+          wget https://mirrors.tuna.tsinghua.edu.cn/android/git/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/-/archive/master/aarch64-linux-android-4.9-master.tar.gz
+          tar -zxvf aarch64-linux-android-4.9-master.tar.gz -C toolchain --strip-components=1
           echo "TOOLCHAIN=$GITHUB_WORKSPACE/toolchain/bin" >> $GITHUB_ENV
 
       - name: 4. 生成内核配置（公共配置 + 设备配置 + 强制开启KSU）
