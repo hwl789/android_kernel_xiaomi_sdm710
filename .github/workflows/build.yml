@@ -1,4 +1,5 @@
 name: Build SDM710 Kernel (Sirius/小米8 SE) with KSU
+
 on:
   workflow_dispatch:
   push:
@@ -7,60 +8,84 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+
     steps:
-      - name: 1. 拉取内核源码
+      - name: 1. 拉取内核源码（含子模块）
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: lineage-23.2-ksu
+          submodules: recursive   # ✅ 关键修复
 
       - name: 2. 安装编译依赖
         run: |
           sudo apt update -y
-          sudo apt install -y build-essential gcc-multilib g++-multilib libssl-dev bc lz4 unzip curl python3 android-tools-mkbootimg bison flex libelf-dev
+          sudo apt install -y \
+            build-essential gcc-multilib g++-multilib \
+            libssl-dev bc lz4 unzip curl python3 \
+            android-sdk-libsparse-utils \
+            bison flex libelf-dev
 
-      - name: 3. 下载并配置 GCC 4.9 工具链
+      - name: 3. 下载 GCC 4.9 工具链（稳定镜像）
         run: |
-          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchain --depth=1
+          git clone --depth=1 \
+            https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 \
+            toolchain
           echo "TOOLCHAIN=$GITHUB_WORKSPACE/toolchain/bin" >> $GITHUB_ENV
 
-      - name: 4. 生成并配置内核（含KSU）
+      - name: 4. 生成并配置内核（含 KSU）
         run: |
-          # 完整路径指定子目录下的配置文件，直接生成 .config
-          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- arch/arm64/configs/xiaomi/sdm710-common.config
-          # 完整路径加载设备专属配置，合并到当前 .config
-          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- arch/arm64/configs/xiaomi/sirius.config
-          # 强制开启KSU依赖项
-          echo -e "CONFIG_KPROBES=y\nCONFIG_KPROBE_EVENTS=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y" >> .config
-          # 补全内核依赖配置，避免编译缺失
-          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN}/aarch64-linux-android- olddefconfig
-          # 验证配置文件生成
-          ls -la .config
+          export ARCH=arm64
+          export CROSS_COMPILE=$TOOLCHAIN/aarch64-linux-android-
+
+          # 生成基础配置
+          make arch/arm64/configs/xiaomi/sdm710-common.config
+          # 合并 Sirius 设备配置
+          make arch/arm64/configs/xiaomi/sirius.config
+
+          # 启用 KSU
+          echo -e "\
+CONFIG_KPROBES=y\n\
+CONFIG_KPROBE_EVENTS=y\n\
+CONFIG_MODULES=y\n\
+CONFIG_MODULE_UNLOAD=y\n\
+CONFIG_KSU=y\n\
+" >> .config
+
+          # 自动补齐缺失符号
+          make olddefconfig
 
       - name: 5. 编译内核
         env:
           ARCH: arm64
           CROSS_COMPILE: ${{ env.TOOLCHAIN }}/aarch64-linux-android-
         run: |
-          make -j$(nproc) Image.gz-dtb modules
+          make -j$(nproc) Image.gz-dtb
 
-      - name: 6. 下载小米8 SE 通用原厂boot.img（适配Lineage-23.2）
+      - name: 6. 下载原厂 boot.img
         run: |
-          wget -O stock_boot.img https://github.com/Rocky7842/android_kernel_xiaomi_sdm710/releases/download/lineage-23.2/stock_boot.img
+          wget -O stock_boot.img \
+            https://github.com/Rocky7842/android_kernel_xiaomi_sdm710/releases/download/lineage-23.2/stock_boot.img
 
-      - name: 7. 拆包并打包带KSU的boot.img
+      - name: 7. 打包 KSU boot.img
         run: |
           unpackbootimg -i stock_boot.img
+
           cp arch/arm64/boot/Image.gz-dtb stock_boot.img-zImage
+
           mkbootimg \
             --kernel stock_boot.img-zImage \
             --ramdisk stock_boot.img-ramdisk.gz \
-            --cmdline "console=ttyMSM0,115200,n8 androidboot.console=ttyMSM0 androidboot.hardware=qcom androidboot.userdebug=true" \
-            --base 0x80000000 \
-            --pagesize 4096 \
+            --cmdline "$(cat stock_boot.img-cmdline)" \
+            --base $(cat stock_boot.img-base) \
+            --pagesize $(cat stock_boot.img-pagesize) \
+            --kernel_offset $(cat stock_boot.img-kernel_offset) \
+            --ramdisk_offset $(cat stock_boot.img-ramdisk_offset) \
+            --second_offset $(cat stock_boot.img-second_offset) \
+            --tags_offset $(cat stock_boot.img-tags_offset) \
             -o KSU_sirius_boot.img
 
-      - name: 8. 上传编译好的boot.img
+      - name: 8. 上传产物
         uses: actions/upload-artifact@v4
         with:
           name: KSU-Sirius-Boot-Image
