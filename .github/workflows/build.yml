@@ -1,4 +1,4 @@
-name: Build Kernel (Clang)
+name: Build Kernel (SDM710 + KSU)
 
 on:
   workflow_dispatch:
@@ -8,31 +8,34 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: Checkout
+    - name: Checkout kernel
       uses: actions/checkout@v4
       with:
         repository: Rocky7842/android_kernel_xiaomi_sdm710
         ref: lineage-23.2-ksu
         fetch-depth: 1
 
-    - name: Install deps
+    - name: Install dependencies
       run: |
         sudo apt update
-        sudo apt install -y bc bison flex libssl-dev make clang lld llvm
+        sudo apt install -y \
+          bc bison flex libssl-dev make \
+          clang lld llvm
 
-    - name: Build
+    - name: Set env
       run: |
-        export ARCH=arm64
-        export LLVM=1
-        export CROSS_COMPILE=aarch64-linux-gnu-
-        export LD=ld.lld
-        make sdm710-common_defconfig
-        make -j$(nproc) KCFLAGS="-Wno-error"
+        echo "ARCH=arm64" >> $GITHUB_ENV
+        echo "SUBARCH=arm64" >> $GITHUB_ENV
+        echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
+        echo "LLVM=1" >> $GITHUB_ENV
 
-    - name: Upload kernel
+    - name: Build kernel
+      run: |
+        make sirius.config
+        make -j$(nproc) Image.gz-dtb
+
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: kernel
-        path: |
-          arch/arm64/boot/Image
-          arch/arm64/boot/Image.gz-dtb
+        path: arch/arm64/boot/Image.gz-dtb
