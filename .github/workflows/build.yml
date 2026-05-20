@@ -6,21 +6,62 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
     steps:
-      # 不再编译内核，直接下载你仓库发布的 成品Image.gz-dtb + 原厂boot
-      - name: 1. 下载已编译好的内核镜像 + 原厂boot.img
+      - name: 1. 拉取内核源码
+        uses: actions/checkout@v4
+        with:
+          repository: hwl789/android_kernel_xiaomi_sdm710
+          ref: lineage-23.2-ksu
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: 2. 安装适配4.9老内核的GCC8（GCC9对老驱动兼容性差，换回GCC8）
         run: |
-          wget https://github.com/Rocky7842/android_kernel_xiaomi_sdm710/releases/download/lineage-23.2/Image.gz-dtb -O Image.gz-dtb
+          sudo apt update -y
+          sudo apt install -y build-essential libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg gcc-8-aarch64-linux-gnu g++-8-aarch64-linux-gnu
+          sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc-8 /usr/bin/aarch64-linux-gnu-gcc
+          sudo ln -sf /usr/bin/aarch64-linux-gnu-g++-8 /usr/bin/aarch64-linux-gnu-g++
+
+      - name: 3. 配置交叉编译前缀
+        run: echo "TOOLCHAIN=aarch64-linux-gnu-" >> $GITHUB_ENV
+
+      - name: 4. 内核配置 + 指纹驱动修复
+        run: |
+          cp arch/arm64/configs/xiaomi/sirius.config .config
+          echo -e "CONFIG_NR_CPUS=8\nCONFIG_KPROBES=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y\nCONFIG_FTRACE=n\nCONFIG_TRACING=n" >> .config
+          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN} olddefconfig
+          sed -i 's/^CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
+          sed -i 's/^CONFIG_KPROBE_EVENTS=y/# CONFIG_KPROBE_EVENTS is not set/' .config
+          sed -i '1i #include <linux/pinctrl/devinfo.h>' drivers/input/fingerprint/fpc_tee/fpc1020_tee.c
+
+      - name: 5. 编译内核（GCC8 + 仅kp_util.o兼容头文件，零全局污染）
+        env:
+          ARCH: arm64
+          CROSS_COMPILE: ${{ env.TOOLCHAIN }}
+          KCFLAGS: "-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion -Wno-unused-variable"
+          EXTRA_CFLAGS_drivers/kernelsu/: "-D__NR_newfstatat=262 -D__NR_faccessat=269 -D__NR_execve=221 -D__NR_setresuid=117"
+          EXTRA_CFLAGS_drivers/kernelsu/kp_util.o: "-include asm/pgtable.h"
+        run: |
+          make -j$(nproc) Image.gz-dtb modules
+
+      - name: 6. 下载原厂boot.img（正确链接）
+        run: |
           wget https://github.com/Rocky7842/android_kernel_xiaomi_sdm710/releases/download/lineage-23.2/stock_boot.img -O stock_boot.img
 
-      - name: 2. 下载KernelSU官方boot-patcher工具注入
+      - name: 7. 打包带KSU的boot.img
         run: |
-          wget https://github.com/tiann/KernelSU/releases/latest/download/boot-patcher -O boot-patcher
-          chmod +x boot-patcher
-          ./boot-patcher stock_boot.img Image.gz-dtb KSU_sirius_boot.img
+          unpackbootimg -i stock_boot.img
+          cp arch/arm64/boot/Image.gz-dtb stock_boot.img-zImage
+          mkbootimg \
+            --kernel stock_boot.img-zImage \
+            --ramdisk stock_boot.img-ramdisk.gz \
+            --cmdline "console=ttyMSM0,115200,n8 androidboot.console=ttyMSM0 androidboot.hardware=qcom androidboot.userdebug=true" \
+            --base 0x80000000 \
+            --pagesize 4096 \
+            -o KSU_sirius_boot.img
 
-      - name: 3. 上传成品KSU boot.img
+      - name: 8. 上传成品
         uses: actions/upload-artifact@v4
         with:
           name: KSU‑Sirius‑Boot‑Image
