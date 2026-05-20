@@ -16,22 +16,23 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: 2. 换清华源 + 安装全套依赖+交叉编译器（核心修复）
+      - name: 2. 换清华源 + 安装全套依赖+交叉编译器
         run: |
           sudo sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
           sudo sed -i 's/security.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
           sudo apt update -y
           sudo apt install -y build-essential libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
-      - name: 3. 配置交叉编译前缀（直接用系统预装，零路径错误）
+      - name: 3. 配置交叉编译前缀
         run: echo "TOOLCHAIN=aarch64-linux-gnu-" >> $GITHUB_ENV
 
-      - name: 4. 合并配置 + 强制开启KSU + 补全依赖
+      - name: 4. 合并配置 + 强制开启KSU + 修复NR_CPUS冲突
         run: |
           cat arch/arm64/configs/xiaomi/sdm710-common.config arch/arm64/configs/xiaomi/sirius.config > .config
-          echo -e "CONFIG_KPROBES=y\nCONFIG_KPROBE_EVENTS=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y" >> .config
+          echo -e "CONFIG_NR_CPUS=8\nCONFIG_KPROBES=y\nCONFIG_KPROBE_EVENTS=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y" >> .config
           make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN} olddefconfig
-          grep -i "ksu\|kprobe" .config
+          sed -i 's/^CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
+          grep -i "ksu\|kprobe\|nr_cpus" .config
 
       - name: 5. 编译内核
         env:
