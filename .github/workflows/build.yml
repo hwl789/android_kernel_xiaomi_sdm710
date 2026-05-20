@@ -8,13 +8,15 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: 1. 拉取内核源码
+      - name: 1. 拉取内核源码 + 切换兼容4.9内核的KSU版本
         uses: actions/checkout@v4
         with:
           repository: hwl789/android_kernel_xiaomi_sdm710
           ref: lineage-23.2-ksu
           submodules: recursive
           fetch-depth: 1
+      # 强制切到适配4.9老内核的KSU版本，彻底解决头文件依赖
+      - run: cd drivers/kernelsu && git checkout v0.9.4
 
       - name: 2. 换清华源 + 安装GCC9交叉编译器（适配老SDM710内核）
         run: |
@@ -22,31 +24,28 @@ jobs:
           sudo sed -i 's/security.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
           sudo apt update -y
           sudo apt install -y build-essential libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg gcc-9-aarch64-linux-gnu g++-9-aarch64-linux-gnu
-          # 强制使用gcc9
           sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc-9 /usr/bin/aarch64-linux-gnu-gcc
           sudo ln -sf /usr/bin/aarch64-linux-gnu-g++-9 /usr/bin/aarch64-linux-gnu-g++
 
       - name: 3. 配置交叉编译前缀
         run: echo "TOOLCHAIN=aarch64-linux-gnu-" >> $GITHUB_ENV
 
-      - name: 4. 直接使用 sirius.config + KSU最小可用配置 + 修复指纹驱动头文件
+      - name: 4. 内核配置 + 指纹驱动修复
         run: |
           cp arch/arm64/configs/xiaomi/sirius.config .config
-          # 小米8 SE固定8核，关闭冲突的kprobe_events，KSU最小必需参数
           echo -e "CONFIG_NR_CPUS=8\nCONFIG_KPROBES=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y\nCONFIG_FTRACE=n\nCONFIG_TRACING=n" >> .config
           make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN} olddefconfig
           sed -i 's/^CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
           sed -i 's/^CONFIG_KPROBE_EVENTS=y/# CONFIG_KPROBE_EVENTS is not set/' .config
-          # 【核心修复】为指纹驱动添加pinctrl头文件，解决隐式函数声明
           sed -i '1i #include <linux/pinctrl/devinfo.h>' drivers/input/fingerprint/fpc_tee/fpc1020_tee.c
           grep -i "ksu\|kprobe\|nr_cpus\|ftrace" .config
 
-      - name: 5. 编译内核（仅KSU目录注入系统调用宏+头文件，全局无污染）
+      - name: 5. 编译内核（仅KSU局部系统调用宏，无全局污染）
         env:
           ARCH: arm64
           CROSS_COMPILE: ${{ env.TOOLCHAIN }}
           KCFLAGS: "-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion"
-          EXTRA_CFLAGS_drivers/kernelsu/: "-D__NR_newfstatat=262 -D__NR_faccessat=269 -D__NR_execve=221 -D__NR_setresuid=117 -include asm/pgtable.h"
+          EXTRA_CFLAGS_drivers/kernelsu/: "-D__NR_newfstatat=262 -D__NR_faccessat=269 -D__NR_execve=221 -D__NR_setresuid=117"
         run: |
           make -j$(nproc) Image.gz-dtb modules
 
