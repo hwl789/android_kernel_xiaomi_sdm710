@@ -1,4 +1,5 @@
-name: Build Kernel (Xiaomi 8 SE Sirius)
+name: Build Kernel (SDM710 + KSU)
+# 适配小米8 SE(sirius)，Clang/LLVM编译，输出Image.gz‑dtb
 on:
   workflow_dispatch:
 
@@ -7,31 +8,39 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout kernel
-        uses: actions/checkout@v4
-        with:
-          repository: Rocky7842/android_kernel_xiaomi_sdm710
-          ref: lineage-23.2-ksu
-          fetch-depth: 1
+    # 1.拉取内核源码
+    - name: Checkout kernel
+      uses: actions/checkout@v4
+      with:
+        repository: Rocky7842/android_kernel_xiaomi_sdm710
+        ref: lineage-23.2-ksu
+        fetch-depth: 1
 
-      - name: Install dependencies
-        run: |
-          sudo apt update -y
-          sudo apt install -y bc bison flex libssl-dev make clang lld llvm
+    # 2.安装Clang/LLVM编译依赖
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          bc bison flex libssl-dev make \
+          clang lld llvm
 
-      - name: Set Clang env
-        run: |
-          echo "ARCH=arm64" >> $GITHUB_ENV
-          echo "LLVM=1" >> $GITHUB_ENV
-          echo "CC=clang" >> $GITHUB_ENV
+    # 3.配置ARM64+Clang编译环境
+    - name: Set env
+      run: |
+        echo "ARCH=arm64" >> $GITHUB_ENV
+        echo "SUBARCH=arm64" >> $GITHUB_ENV
+        echo "LLVM=1" >> $GITHUB_ENV
+        echo "CC=clang" >> $GITHUB_ENV
 
-      - name: Build kernel
-        run: |
-          make sirius.config
-          make -j$(nproc) Image.gz-dtb
+    # 4.加载小米8SE配置并编译内核镜像
+    - name: Build kernel
+      run: |
+        make sirius.config
+        make -j$(nproc) Image.gz-dtb
 
-      - name: Upload Image.gz-dtb
-        uses: actions/upload-artifact@v4
-        with:
-          name: kernel
-          path: arch/arm64/boot/Image.gz-dtb
+    # 5.上传编译成品
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: kernel
+        path: arch/arm64/boot/Image.gz-dtb
