@@ -1,77 +1,38 @@
-name: Build SDM710 Kernel (Sirius/小米8 SE) with KSU
+name: Build Kernel (Clang)
+
 on:
   workflow_dispatch:
-  push:
-    branches: [ lineage-23.2-ksu ]
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+
     steps:
-      - name: 1. 拉取完整内核源码（包含livepatch）
-        uses: actions/checkout@v4
-        with:
-          repository: hwl789/android_kernel_xiaomi_sdm710
-          ref: lineage-23.2-ksu
-          submodules: recursive
-          fetch-depth: 1
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        repository: Rocky7842/android_kernel_xiaomi_sdm710
+        ref: lineage-23.2-ksu
+        fetch-depth: 1
 
-      # 手动添加 NOHZ_BALANCE_KICK 宏定义，根治报错
-      - name: 2. 手动添加缺失宏定义 + livepatch兼容
-        run: |
-          sed -i '1i #define NOHZ_BALANCE_KICK 0' kernel/sched/core.c
-          sed -i 's/__attribute__((packed))/__attribute__((packed, aligned(1)))/' kernel/livepatch/core.c
+    - name: Install deps
+      run: |
+        sudo apt update
+        sudo apt install -y bc bison flex libssl-dev make clang lld llvm
 
-      - name: 3. 安装GCC‑11
-        run: |
-          sudo sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
-          sudo sed -i 's/security.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
-          sudo apt update -y
-          sudo apt install -y build-essential libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg gcc-11-aarch64-linux-gnu g++-11-aarch64-linux-gnu
-          sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc-11 /usr/bin/aarch64-linux-gnu-gcc
-          sudo ln -sf /usr/bin/aarch64-linux-gnu-g++-11 /usr/bin/aarch64-linux-gnu-g++
+    - name: Build
+      run: |
+        export ARCH=arm64
+        export LLVM=1
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        export LD=ld.lld
+        make sdm710-common_defconfig
+        make -j$(nproc) KCFLAGS="-Wno-error"
 
-      - name: 4. 配置交叉编译前缀
-        run: echo "TOOLCHAIN=aarch64-linux-gnu-" >> $GITHUB_ENV
-
-      - name: 5. 内核配置（开启LIVEPATCH）
-        run: |
-          cp arch/arm64/configs/xiaomi/sirius.config .config
-          echo -e "CONFIG_NR_CPUS=8\nCONFIG_KPROBES=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y\nCONFIG_FTRACE=n\nCONFIG_TRACING=n\nCONFIG_LIVEPATCH=y" >> .config
-          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN} olddefconfig
-          sed -i 's/^CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
-          sed -i 's/^CONFIG_KPROBE_EVENTS=y/# CONFIG_KPROBE_EVENTS is not set/' .config
-          sed -i '1i #include <linux/pinctrl/devinfo.h>' drivers/input/fingerprint/fpc_tee/fpc1020_tee.c
-
-      - name: 6. GCC‑11编译
-        env:
-          ARCH: arm64
-          CROSS_COMPILE: ${{ env.TOOLCHAIN }}
-          KCFLAGS: "-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion -Wno-unused-variable -Wno-unused-function"
-          EXTRA_CFLAGS_drivers/kernelsu/: "-D__NR_newfstatat=262 -D__NR_faccessat=269 -D__NR_execve=221 -D__NR_setresuid=117"
-          EXTRA_CFLAGS_drivers/kernelsu/kp_util.o: "-include asm/pgtable.h"
-          KBUILD_CFLAGS_MODULE: "-Wno-error"
-        run: |
-          make -j$(nproc) Image.gz-dtb modules
-
-      - name: 7. 下载原厂boot.img
-        run: |
-          wget https://github.com/Rocky7842/android_kernel_xiaomi_sdm710/releases/download/lineage-23.2/stock_boot.img -O stock_boot.img
-
-      - name: 8. 打包KSU‑boot.img
-        run: |
-          unpackbootimg -i stock_boot.img
-          cp arch/arm64/boot/Image.gz-dtb stock_boot.img-zImage
-          mkbootimg \
-            --kernel stock_boot.img-zImage \
-            --ramdisk stock_boot.img-ramdisk.gz \
-            --cmdline "console=ttyMSM0,115200,n8 androidboot.console=ttyMSM0 androidboot.hardware=qcom androidboot.userdebug=true" \
-            --base 0x80000000 \
-            --pagesize 4096 \
-            -o KSU_sirius_boot.img
-
-      - name: 9. 上传成品
-        uses: actions/upload-artifact@v4
-        with:
-          name: KSU‑Sirius‑Boot‑Image
-          path: KSU_sirius_boot.img
+    - name: Upload kernel
+      uses: actions/upload-artifact@v4
+      with:
+        name: kernel
+        path: |
+          arch/arm64/boot/Image
+          arch/arm64/boot/Image.gz-dtb
