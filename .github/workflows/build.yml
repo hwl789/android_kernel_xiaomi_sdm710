@@ -41,11 +41,12 @@ jobs:
           sed -i '1i #include <linux/pinctrl/devinfo.h>' drivers/input/fingerprint/fpc_tee/fpc1020_tee.c
           grep -i "ksu\|kprobe\|nr_cpus\|ftrace" .config
 
-      - name: 5. 编译内核（不修改源码，全局兼容缺失头文件+系统调用宏）
+      - name: 5. 编译内核（不修改源码，仅KSU目录兼容头文件+系统调用宏）
         env:
           ARCH: arm64
           CROSS_COMPILE: ${{ env.TOOLCHAIN }}
-          KCFLAGS: "-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion -D__NR_newfstatat=262 -D__NR_faccessat=269 -D__NR_execve=221 -D__NR_setresuid=117 -include <asm/pgtable.h>"
+          KCFLAGS: "-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion -D__NR_newfstatat=262 -D__NR_faccessat=269 -D__NR_execve=221 -D__NR_setresuid=117"
+          EXTRA_CFLAGS_drivers/kernelsu/: "-include asm/pgtable.h"
         run: |
           make -j$(nproc) Image.gz-dtb modules
 
