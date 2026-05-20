@@ -13,10 +13,10 @@ jobs:
         with:
           repository: hwl789/android_kernel_xiaomi_sdm710
           ref: lineage-23.2-ksu
-          submodules: recursive
+          submodules: false
           fetch-depth: 1
 
-      - name: 2. 换清华源 + 安装GCC9交叉编译器（适配老SDM710内核）
+      - name: 2. 换清华源 + 安装GCC9交叉编译器
         run: |
           sudo sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
           sudo sed -i 's/security.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
@@ -31,20 +31,18 @@ jobs:
       - name: 4. 内核配置 + 指纹驱动修复
         run: |
           cp arch/arm64/configs/xiaomi/sirius.config .config
-          echo -e "CONFIG_NR_CPUS=8\nCONFIG_KPROBES=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y\nCONFIG_FTRACE=n\nCONFIG_TRACING=n" >> .config
+          echo -e "CONFIG_NR_CPUS=8\nCONFIG_KPROBES=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_FTRACE=n\nCONFIG_TRACING=n" >> .config
           make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN} olddefconfig
           sed -i 's/^CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
           sed -i 's/^CONFIG_KPROBE_EVENTS=y/# CONFIG_KPROBE_EVENTS is not set/' .config
           sed -i '1i #include <linux/pinctrl/devinfo.h>' drivers/input/fingerprint/fpc_tee/fpc1020_tee.c
-          grep -i "ksu\|kprobe\|nr_cpus\|ftrace" .config
+          grep -i "kprobe\|nr_cpus\|ftrace" .config
 
-      - name: 5. 编译内核（精准兼容kp_util.c，仅KSU局部生效）
+      - name: 5. 编译纯净内核（不编译KSU源码）
         env:
           ARCH: arm64
           CROSS_COMPILE: ${{ env.TOOLCHAIN }}
           KCFLAGS: "-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion"
-          EXTRA_CFLAGS_drivers/kernelsu/: "-D__NR_newfstatat=262 -D__NR_faccessat=269 -D__NR_execve=221 -D__NR_setresuid=117"
-          EXTRA_CFLAGS_drivers/kernelsu/kp_util.o: "-include asm/pgtable.h"
         run: |
           make -j$(nproc) Image.gz-dtb modules
 
@@ -52,17 +50,11 @@ jobs:
         run: |
           wget https://github.com/Rocky7842/android_kernel_xiaomi_sdm710/releases/download/lineage-23.2/stock_boot.img -O stock_boot.img
 
-      - name: 7. 打包带KSU的boot.img
+      - name: 7. 直接使用 KernelSU 官方boot-patcher 注入KSU（零内核源码修改）
         run: |
-          unpackbootimg -i stock_boot.img
-          cp arch/arm64/boot/Image.gz-dtb stock_boot.img-zImage
-          mkbootimg \
-            --kernel stock_boot.img-zImage \
-            --ramdisk stock_boot.img-ramdisk.gz \
-            --cmdline "console=ttyMSM0,115200,n8 androidboot.console=ttyMSM0 androidboot.hardware=qcom androidboot.userdebug=true" \
-            --base 0x80000000 \
-            --pagesize 4096 \
-            -o KSU_sirius_boot.img
+          wget https://github.com/tiann/KernelSU/releases/latest/download/boot-patcher -O boot-patcher
+          chmod +x boot-patcher
+          ./boot-patcher stock_boot.img arch/arm64/boot/Image.gz-dtb KSU_sirius_boot.img
 
       - name: 8. 上传成品
         uses: actions/upload-artifact@v4
