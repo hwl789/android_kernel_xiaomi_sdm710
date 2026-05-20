@@ -16,31 +16,34 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: 2. 换清华源 + 安装基础依赖
+      - name: 2. 换清华源 + 安装GCC9交叉编译器（适配老SDM710内核）
         run: |
           sudo sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
           sudo sed -i 's/security.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
           sudo apt update -y
-          sudo apt install -y build-essential libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg
+          sudo apt install -y build-essential libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg gcc-9-aarch64-linux-gnu g++-9-aarch64-linux-gnu
+          # 强制使用gcc9
+          sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc-9 /usr/bin/aarch64-linux-gnu-gcc
+          sudo ln -sf /usr/bin/aarch64-linux-gnu-g++-9 /usr/bin/aarch64-linux-gnu-g++
 
-      - name: 3. 拉取谷歌原生GCC4.9（SDM710原厂编译器，必兼容）
-        run: |
-          git clone https://mirrors.tuna.tsinghua.edu.cn/git/AOSP/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchain --depth=1
-          echo "TOOLCHAIN=${GITHUB_WORKSPACE}/toolchain/bin/aarch64-linux-android-" >> $GITHUB_ENV
+      - name: 3. 配置交叉编译前缀
+        run: echo "TOOLCHAIN=aarch64-linux-gnu-" >> $GITHUB_ENV
 
-      - name: 4. 加载官方完整配置 + 仅开启KSU最小必需项
+      - name: 4. 直接使用 sirius.config + KSU最小可用配置
         run: |
-          # 直接加载官方sirius完整配置，不拼接，避免冲突
-          make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN} sdm710_defconfig
-          # 小米8 SE固定8核，KSU最小可用参数，关闭所有冲突项
-          echo -e "CONFIG_NR_CPUS=8\nCONFIG_KPROBES=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y\nCONFIG_FTRACE=n\nCONFIG_TRACING=n\nCONFIG_KPROBE_EVENTS=n" >> .config
+          cp arch/arm64/configs/xiaomi/sirius.config .config
+          # 小米8 SE固定8核，关闭冲突的kprobe_events，KSU最小必需参数
+          echo -e "CONFIG_NR_CPUS=8\nCONFIG_KPROBES=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y\nCONFIG_FTRACE=n\nCONFIG_TRACING=n" >> .config
           make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN} olddefconfig
           sed -i 's/^CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
+          sed -i 's/^CONFIG_KPROBE_EVENTS=y/# CONFIG_KPROBE_EVENTS is not set/' .config
+          grep -i "ksu\|kprobe\|nr_cpus\|ftrace" .config
 
-      - name: 5. 编译内核（原厂编译器，无语法报错）
+      - name: 5. 编译内核（关闭警告报错，适配老内核）
         env:
           ARCH: arm64
           CROSS_COMPILE: ${{ env.TOOLCHAIN }}
+          KCFLAGS: "-Wno-error"
         run: |
           make -j$(nproc) Image.gz-dtb modules
 
