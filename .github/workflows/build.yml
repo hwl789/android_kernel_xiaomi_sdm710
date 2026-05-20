@@ -16,18 +16,15 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: 2. 更换APT为清华源 + 安装基础依赖
+      - name: 2. 换清华源 + 安装全套依赖+交叉编译器（核心修复）
         run: |
           sudo sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
           sudo sed -i 's/security.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
           sudo apt update -y
-          sudo apt install -y build-essential libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg
+          sudo apt install -y build-essential libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
-      - name: 3. 拉取谷歌官方GCC4.9 + 正确配置CROSS_COMPILE前缀
-        run: |
-          git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchain --depth=1
-          # 关键修复：必须指定 bin/ + 编译器前缀 aarch64-linux-android-
-          echo "TOOLCHAIN=${GITHUB_WORKSPACE}/toolchain/bin/aarch64-linux-android-" >> $GITHUB_ENV
+      - name: 3. 配置交叉编译前缀（直接用系统预装，零路径错误）
+        run: echo "TOOLCHAIN=aarch64-linux-gnu-" >> $GITHUB_ENV
 
       - name: 4. 合并配置 + 强制开启KSU + 补全依赖
         run: |
