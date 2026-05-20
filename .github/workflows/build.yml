@@ -23,18 +23,16 @@ jobs:
           sudo apt update -y
           sudo apt install -y build-essential libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg
 
-      - name: 3. 原生git拉取谷歌官方GCC4.9（无代理，修正路径）
+      - name: 3. 拉取谷歌官方GCC4.9 + 正确配置CROSS_COMPILE前缀
         run: |
           git clone https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 toolchain --depth=1
-          # 修正：编译器直接在toolchain/ 下，不是bin目录
-          echo "TOOLCHAIN=$GITHUB_WORKSPACE/toolchain/" >> $GITHUB_ENV
+          # 关键修复：必须指定 bin/ + 编译器前缀 aarch64-linux-android-
+          echo "TOOLCHAIN=${GITHUB_WORKSPACE}/toolchain/bin/aarch64-linux-android-" >> $GITHUB_ENV
 
-      - name: 4. 直接复制配置 + 更新内核依赖 + 强制开启KSU
+      - name: 4. 合并配置 + 强制开启KSU + 补全依赖
         run: |
           cat arch/arm64/configs/xiaomi/sdm710-common.config arch/arm64/configs/xiaomi/sirius.config > .config
-          # 强制开启KSU
           echo -e "CONFIG_KPROBES=y\nCONFIG_KPROBE_EVENTS=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y" >> .config
-          # 自动补全内核缺失配置，解决依赖报错
           make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN} olddefconfig
           grep -i "ksu\|kprobe" .config
 
