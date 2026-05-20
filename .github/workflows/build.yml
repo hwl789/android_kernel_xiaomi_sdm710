@@ -6,7 +6,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
       - name: 1. 拉取内核源码
         uses: actions/checkout@v4
@@ -16,12 +16,14 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: 2. 安装适配4.9老内核的GCC8（GCC9对老驱动兼容性差，换回GCC8）
+      - name: 2. 换清华源 + 安装GCC9交叉编译器（适配老SDM710内核）
         run: |
+          sudo sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
+          sudo sed -i 's/security.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
           sudo apt update -y
-          sudo apt install -y build-essential libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg gcc-8-aarch64-linux-gnu g++-8-aarch64-linux-gnu
-          sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc-8 /usr/bin/aarch64-linux-gnu-gcc
-          sudo ln -sf /usr/bin/aarch64-linux-gnu-g++-8 /usr/bin/aarch64-linux-gnu-g++
+          sudo apt install -y build-essential libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg gcc-9-aarch64-linux-gnu g++-9-aarch64-linux-gnu
+          sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc-9 /usr/bin/aarch64-linux-gnu-gcc
+          sudo ln -sf /usr/bin/aarch64-linux-gnu-g++-9 /usr/bin/aarch64-linux-gnu-g++
 
       - name: 3. 配置交叉编译前缀
         run: echo "TOOLCHAIN=aarch64-linux-gnu-" >> $GITHUB_ENV
@@ -34,18 +36,19 @@ jobs:
           sed -i 's/^CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
           sed -i 's/^CONFIG_KPROBE_EVENTS=y/# CONFIG_KPROBE_EVENTS is not set/' .config
           sed -i '1i #include <linux/pinctrl/devinfo.h>' drivers/input/fingerprint/fpc_tee/fpc1020_tee.c
+          grep -i "ksu\|kprobe\|nr_cpus\|ftrace" .config
 
-      - name: 5. 编译内核（GCC8 + 仅kp_util.o兼容头文件，零全局污染）
+      - name: 5. 编译内核（精准兼容kp_util.c，仅KSU局部生效）
         env:
           ARCH: arm64
           CROSS_COMPILE: ${{ env.TOOLCHAIN }}
-          KCFLAGS: "-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion -Wno-unused-variable"
+          KCFLAGS: "-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion"
           EXTRA_CFLAGS_drivers/kernelsu/: "-D__NR_newfstatat=262 -D__NR_faccessat=269 -D__NR_execve=221 -D__NR_setresuid=117"
           EXTRA_CFLAGS_drivers/kernelsu/kp_util.o: "-include asm/pgtable.h"
         run: |
           make -j$(nproc) Image.gz-dtb modules
 
-      - name: 6. 下载原厂boot.img（正确链接）
+      - name: 6. 下载原厂boot.img
         run: |
           wget https://github.com/Rocky7842/android_kernel_xiaomi_sdm710/releases/download/lineage-23.2/stock_boot.img -O stock_boot.img
 
