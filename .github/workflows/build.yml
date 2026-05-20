@@ -8,8 +8,8 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      # 1. 完整拉取仓库全部源码+子模块（100%复用仓库所有文件）
-      - name: 1. 完整拉取仓库全部源码&子模块
+      # 1. 完整拉取内核所有源码，包含 kernel/livepatch/
+      - name: 1. 拉取完整内核源码（livepatch自动包含）
         uses: actions/checkout@v4
         with:
           repository: hwl789/android_kernel_xiaomi_sdm710
@@ -17,48 +17,53 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      # 2. 安装 GCC9 交叉编译器，强制锁定 GCC9（严格按你要求）
-      - name: 2. 安装并强制使用 GCC9
+      # 2. 自动打补丁：
+      # ① 修复 NOHZ_BALANCE_KICK 未定义
+      # ② 修复 livepatch 适配 GCC‑11 语法
+      - name: 2. 自动补丁兼容
+        run: |
+          sed -i '2i #define NOHZ_BALANCE_KICK 0' kernel/sched/core.c
+          sed -i 's/__attribute__((packed))/__attribute__((packed, aligned(1)))/' kernel/livepatch/core.c
+
+      # 3. 升级 GCC‑11
+      - name: 3. 安装 GCC‑11 交叉编译器
         run: |
           sudo sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
           sudo sed -i 's/security.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
           sudo apt update -y
-          sudo apt install -y build-essential libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg gcc-9-aarch64-linux-gnu g++-9-aarch64-linux-gnu
-          # 强制全局绑定 GCC9，不使用其他版本
-          sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc-9 /usr/bin/aarch64-linux-gnu-gcc
-          sudo ln -sf /usr/bin/aarch64-linux-gnu-g++-9 /usr/bin/aarch64-linux-gnu-g++
+          sudo apt install -y build-essential libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg gcc-11-aarch64-linux-gnu g++-11-aarch64-linux-gnu
+          sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc-11 /usr/bin/aarch64-linux-gnu-gcc
+          sudo ln -sf /usr/bin/aarch64-linux-gnu-g++-11 /usr/bin/aarch64-linux-gnu-g++
 
-      - name: 3. 配置交叉编译前缀
+      - name: 4. 配置交叉编译前缀
         run: echo "TOOLCHAIN=aarch64-linux-gnu-" >> $GITHUB_ENV
 
-      # 4. 复用仓库原生配置，仅追加KSU必需开关
-      - name: 4. 复用仓库原生内核配置
+      # 5. 开启 LIVEPATCH，正常编译
+      - name: 5. 内核配置
         run: |
           cp arch/arm64/configs/xiaomi/sirius.config .config
-          echo -e "CONFIG_NR_CPUS=8\nCONFIG_KPROBES=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y\nCONFIG_FTRACE=n\nCONFIG_TRACING=n\nCONFIG_KPROBE_EVENTS=n" >> .config
+          echo -e "CONFIG_NR_CPUS=8\nCONFIG_KPROBES=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y\nCONFIG_FTRACE=n\nCONFIG_TRACING=n\nCONFIG_LIVEPATCH=y" >> .config
           make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN} olddefconfig
           sed -i 's/^CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
+          sed -i 's/^CONFIG_KPROBE_EVENTS=y/# CONFIG_KPROBE_EVENTS is not set/' .config
           sed -i '1i #include <linux/pinctrl/devinfo.h>' drivers/input/fingerprint/fpc_tee/fpc1020_tee.c
 
-      # 5. GCC9 专属兼容参数，精准修复KSU报错，全局关闭GCC9严格警告
-      - name: 5. GCC9编译内核（全仓库文件复用，精准兼容KSU）
+      - name: 6. GCC‑11 编译
         env:
           ARCH: arm64
           CROSS_COMPILE: ${{ env.TOOLCHAIN }}
-          # GCC9专属：关闭所有严格警告报错，兼容老驱动
-          KCFLAGS: "-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion -Wno-unused-variable -Wno-unused-function -Wno-gnu-variable-sized-type-not-at-end"
-          # 仅KSU目录：补充缺失系统调用宏
+          KCFLAGS: "-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion -Wno-unused-variable -Wno-unused-function"
           EXTRA_CFLAGS_drivers/kernelsu/: "-D__NR_newfstatat=262 -D__NR_faccessat=269 -D__NR_execve=221 -D__NR_setresuid=117"
-          # 仅单个报错文件：替换pgtable头文件，不污染全局
           EXTRA_CFLAGS_drivers/kernelsu/kp_util.o: "-include asm/pgtable.h"
+          KBUILD_CFLAGS_MODULE: "-Wno-error"
         run: |
           make -j$(nproc) Image.gz-dtb modules
 
-      - name: 6. 下载原厂boot.img
+      - name: 7. 下载原厂boot.img
         run: |
           wget https://github.com/Rocky7842/android_kernel_xiaomi_sdm710/releases/download/lineage-23.2/stock_boot.img -O stock_boot.img
 
-      - name: 7. 打包KSU boot.img（复用仓库原生参数）
+      - name: 8. 打包 KSU‑boot.img
         run: |
           unpackbootimg -i stock_boot.img
           cp arch/arm64/boot/Image.gz-dtb stock_boot.img-zImage
@@ -70,7 +75,7 @@ jobs:
             --pagesize 4096 \
             -o KSU_sirius_boot.img
 
-      - name: 8. 上传成品
+      - name: 9. 上传成品
         uses: actions/upload-artifact@v4
         with:
           name: KSU‑Sirius‑Boot‑Image
