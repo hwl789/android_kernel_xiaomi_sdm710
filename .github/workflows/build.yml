@@ -1,46 +1,47 @@
-name: Build Kernel (SDM710 + KSU)
-# 适配小米8 SE(sirius)，Clang/LLVM编译，输出Image.gz‑dtb
+name: Build SDM710 Kernel (Sirius/小米8 SE)
 on:
   workflow_dispatch:
+  push:
+    branches: [ lineage-23.2-ksu ]
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-
     steps:
-    # 1.拉取内核源码
-    - name: Checkout kernel
-      uses: actions/checkout@v4
-      with:
-        repository: Rocky7842/android_kernel_xiaomi_sdm710
-        ref: lineage-23.2-ksu
-        fetch-depth: 1
+      - name: 1. 拉取内核源码
+        uses: actions/checkout@v4
+        with:
+          repository: hwl789/android_kernel_xiaomi_sdm710
+          ref: lineage-23.2-ksu
+          submodules: recursive
+          fetch-depth: 1
 
-    # 2.安装Clang/LLVM编译依赖
-    - name: Install dependencies
-      run: |
-        sudo apt update
-        sudo apt install -y \
-          bc bison flex libssl-dev make \
-          clang lld llvm
+      - name: 2. 换清华源 + 安装Clang/LLVM编译器
+        run: |
+          sudo sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
+          sudo sed -i 's/security.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
+          sudo apt update -y
+          sudo apt install -y bc bison flex libssl-dev make clang lld llvm libelf-dev
 
-    # 3.配置ARM64+Clang编译环境
-    - name: Set env
-      run: |
-        echo "ARCH=arm64" >> $GITHUB_ENV
-        echo "SUBARCH=arm64" >> $GITHUB_ENV
-        echo "LLVM=1" >> $GITHUB_ENV
-        echo "CC=clang" >> $GITHUB_ENV
+      - name: 3. 配置编译环境
+        run: |
+          echo "ARCH=arm64" >> $GITHUB_ENV
+          echo "LLVM=1" >> $GITHUB_ENV
+          echo "CC=clang" >> $GITHUB_ENV
 
-    # 4.加载小米8SE配置并编译内核镜像
-    - name: Build kernel
-      run: |
-        make sirius.config
-        make -j$(nproc) Image.gz-dtb
+      - name: 4. 加载小米8SE默认配置
+        run: |
+          cp arch/arm64/configs/xiaomi/sirius.config .config
+          make ARCH=arm64 LLVM=1 olddefconfig
 
-    # 5.上传编译成品
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: kernel
-        path: arch/arm64/boot/Image.gz-dtb
+      - name: 5. 编译内核输出 Image 与 Image.gz‑dtb
+        run: |
+          make -j$(nproc) Image.gz-dtb
+
+      - name: 6. 上传内核镜像
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sirius-Kernel-Image
+          path: |
+            arch/arm64/boot/Image
+            arch/arm64/boot/Image.gz-dtb
