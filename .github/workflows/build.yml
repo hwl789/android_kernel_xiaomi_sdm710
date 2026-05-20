@@ -8,8 +8,7 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      # 1. 完整拉取内核所有源码，包含 kernel/livepatch/
-      - name: 1. 拉取完整内核源码（livepatch自动包含）
+      - name: 1. 拉取完整内核源码（包含livepatch）
         uses: actions/checkout@v4
         with:
           repository: hwl789/android_kernel_xiaomi_sdm710
@@ -17,16 +16,13 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      # 2. 自动打补丁：
-      # ① 修复 NOHZ_BALANCE_KICK 未定义
-      # ② 修复 livepatch 适配 GCC‑11 语法
-      - name: 2. 自动补丁兼容
+      # 手动添加 NOHZ_BALANCE_KICK 宏定义，根治报错
+      - name: 2. 手动添加缺失宏定义 + livepatch兼容
         run: |
-          sed -i '2i #define NOHZ_BALANCE_KICK 0' kernel/sched/core.c
+          sed -i '1i #define NOHZ_BALANCE_KICK 0' kernel/sched/core.c
           sed -i 's/__attribute__((packed))/__attribute__((packed, aligned(1)))/' kernel/livepatch/core.c
 
-      # 3. 升级 GCC‑11
-      - name: 3. 安装 GCC‑11 交叉编译器
+      - name: 3. 安装GCC‑11
         run: |
           sudo sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
           sudo sed -i 's/security.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
@@ -38,8 +34,7 @@ jobs:
       - name: 4. 配置交叉编译前缀
         run: echo "TOOLCHAIN=aarch64-linux-gnu-" >> $GITHUB_ENV
 
-      # 5. 开启 LIVEPATCH，正常编译
-      - name: 5. 内核配置
+      - name: 5. 内核配置（开启LIVEPATCH）
         run: |
           cp arch/arm64/configs/xiaomi/sirius.config .config
           echo -e "CONFIG_NR_CPUS=8\nCONFIG_KPROBES=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y\nCONFIG_FTRACE=n\nCONFIG_TRACING=n\nCONFIG_LIVEPATCH=y" >> .config
@@ -48,7 +43,7 @@ jobs:
           sed -i 's/^CONFIG_KPROBE_EVENTS=y/# CONFIG_KPROBE_EVENTS is not set/' .config
           sed -i '1i #include <linux/pinctrl/devinfo.h>' drivers/input/fingerprint/fpc_tee/fpc1020_tee.c
 
-      - name: 6. GCC‑11 编译
+      - name: 6. GCC‑11编译
         env:
           ARCH: arm64
           CROSS_COMPILE: ${{ env.TOOLCHAIN }}
@@ -63,7 +58,7 @@ jobs:
         run: |
           wget https://github.com/Rocky7842/android_kernel_xiaomi_sdm710/releases/download/lineage-23.2/stock_boot.img -O stock_boot.img
 
-      - name: 8. 打包 KSU‑boot.img
+      - name: 8. 打包KSU‑boot.img
         run: |
           unpackbootimg -i stock_boot.img
           cp arch/arm64/boot/Image.gz-dtb stock_boot.img-zImage
