@@ -6,9 +6,10 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
-      - name: 1. 拉取内核完整源码（递归子模块）
+      # 1. 完整拉取仓库全部源码+子模块（100%复用仓库所有文件）
+      - name: 1. 完整拉取仓库全部源码&子模块
         uses: actions/checkout@v4
         with:
           repository: hwl789/android_kernel_xiaomi_sdm710
@@ -16,48 +17,48 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: 2. 安装原生适配4.9内核的GCC8交叉编译器（彻底解决老驱动编译报错）
+      # 2. 安装 GCC9 交叉编译器，强制锁定 GCC9（严格按你要求）
+      - name: 2. 安装并强制使用 GCC9
         run: |
+          sudo sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
+          sudo sed -i 's/security.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
           sudo apt update -y
-          sudo apt install -y build-essential libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg gcc-8-aarch64-linux-gnu g++-8-aarch64-linux-gnu
-          # 强制绑定gcc8，完全适配SDM710 4.9老内核
-          sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc-8 /usr/bin/aarch64-linux-gnu-gcc
-          sudo ln -sf /usr/bin/aarch64-linux-gnu-g++-8 /usr/bin/aarch64-linux-gnu-g++
+          sudo apt install -y build-essential libssl-dev bc lz4 unzip curl python3 bison flex libelf-dev android-tools-mkbootimg gcc-9-aarch64-linux-gnu g++-9-aarch64-linux-gnu
+          # 强制全局绑定 GCC9，不使用其他版本
+          sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc-9 /usr/bin/aarch64-linux-gnu-gcc
+          sudo ln -sf /usr/bin/aarch64-linux-gnu-g++-9 /usr/bin/aarch64-linux-gnu-g++
 
-      - name: 3. 配置交叉编译全局前缀
+      - name: 3. 配置交叉编译前缀
         run: echo "TOOLCHAIN=aarch64-linux-gnu-" >> $GITHUB_ENV
 
-      - name: 4. 全量内核配置 + 驱动修复 + KSU最小兼容开关
+      # 4. 复用仓库原生配置，仅追加KSU必需开关
+      - name: 4. 复用仓库原生内核配置
         run: |
-          # 加载官方设备配置
           cp arch/arm64/configs/xiaomi/sirius.config .config
-          # 小米8 SE 固定8核，开启KSU必需开关，关闭冲突调试项
           echo -e "CONFIG_NR_CPUS=8\nCONFIG_KPROBES=y\nCONFIG_MODULES=y\nCONFIG_MODULE_UNLOAD=y\nCONFIG_KSU=y\nCONFIG_FTRACE=n\nCONFIG_TRACING=n\nCONFIG_KPROBE_EVENTS=n" >> .config
-          # 生成完整配置
           make ARCH=arm64 CROSS_COMPILE=${TOOLCHAIN} olddefconfig
-          # 强制锁定CPU核心数，避免自动变更
           sed -i 's/^CONFIG_NR_CPUS=.*/CONFIG_NR_CPUS=8/' .config
-          # 指纹驱动头文件修复，解决隐式函数报错
           sed -i '1i #include <linux/pinctrl/devinfo.h>' drivers/input/fingerprint/fpc_tee/fpc1020_tee.c
 
-      - name: 5. 全局+局部双重兼容（全仓库适配，零源码修改）
+      # 5. GCC9 专属兼容参数，精准修复KSU报错，全局关闭GCC9严格警告
+      - name: 5. GCC9编译内核（全仓库文件复用，精准兼容KSU）
         env:
           ARCH: arm64
           CROSS_COMPILE: ${{ env.TOOLCHAIN }}
-          # 全局关闭所有警告报错，兼容老驱动不规范写法
-          KCFLAGS: "-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion -Wno-unused-variable -Wno-unused-function"
-          # 仅KSU目录：定义缺失系统调用号，不污染全局内核
+          # GCC9专属：关闭所有严格警告报错，兼容老驱动
+          KCFLAGS: "-Wno-error -Wno-implicit-function-declaration -Wno-int-conversion -Wno-unused-variable -Wno-unused-function -Wno-gnu-variable-sized-type-not-at-end"
+          # 仅KSU目录：补充缺失系统调用宏
           EXTRA_CFLAGS_drivers/kernelsu/: "-D__NR_newfstatat=262 -D__NR_faccessat=269 -D__NR_execve=221 -D__NR_setresuid=117"
-          # 仅报错单个文件：替换pgtable头文件，精准解决4.9内核缺失问题
+          # 仅单个报错文件：替换pgtable头文件，不污染全局
           EXTRA_CFLAGS_drivers/kernelsu/kp_util.o: "-include asm/pgtable.h"
         run: |
           make -j$(nproc) Image.gz-dtb modules
 
-      - name: 6. 下载官方原厂boot.img（固定有效链接）
+      - name: 6. 下载原厂boot.img
         run: |
           wget https://github.com/Rocky7842/android_kernel_xiaomi_sdm710/releases/download/lineage-23.2/stock_boot.img -O stock_boot.img
 
-      - name: 7. 打包KSU-boot镜像（严格匹配小米8 SE分区参数）
+      - name: 7. 打包KSU boot.img（复用仓库原生参数）
         run: |
           unpackbootimg -i stock_boot.img
           cp arch/arm64/boot/Image.gz-dtb stock_boot.img-zImage
@@ -69,7 +70,7 @@ jobs:
             --pagesize 4096 \
             -o KSU_sirius_boot.img
 
-      - name: 8. 上传最终成品
+      - name: 8. 上传成品
         uses: actions/upload-artifact@v4
         with:
           name: KSU‑Sirius‑Boot‑Image
