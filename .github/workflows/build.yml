@@ -16,25 +16,27 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: 2. 换清华源 + 安装Clang/LLVM编译器
+      - name: 2. 换清华源 + 安装GCC‑9交叉编译器（适配4.9老内核，避开Clang兼容问题）
         run: |
           sudo sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
           sudo sed -i 's/security.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
           sudo apt update -y
-          sudo apt install -y bc bison flex libssl-dev make clang lld llvm libelf-dev
+          sudo apt install -y bc bison flex libssl-dev make libelf-dev gcc-9-aarch64-linux-gnu g++-9-aarch64-linux-gnu
+          sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc-9 /usr/bin/aarch64-linux-gnu-gcc
+          sudo ln -sf /usr/bin/aarch64-linux-gnu-g++-9 /usr/bin/aarch64-linux-gnu-g++
 
-      - name: 3. 配置编译环境
-        run: |
-          echo "ARCH=arm64" >> $GITHUB_ENV
-          echo "LLVM=1" >> $GITHUB_ENV
-          echo "CC=clang" >> $GITHUB_ENV
+      - name: 3. 配置GCC交叉编译环境
+        run: echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
 
-      - name: 4. 加载小米8SE默认配置
+      - name: 4. 加载小米8SE默认内核配置
         run: |
           cp arch/arm64/configs/xiaomi/sirius.config .config
-          make ARCH=arm64 LLVM=1 olddefconfig
+          make ARCH=arm64 CROSS_COMPILE=${{ env.CROSS_COMPILE }} olddefconfig
 
-      - name: 5. 编译内核输出 Image 与 Image.gz‑dtb
+      - name: 5. 编译内核，输出 arch/arm64/boot/Image 与 Image.gz‑dtb
+        env:
+          ARCH: arm64
+          CROSS_COMPILE: ${{ env.CROSS_COMPILE }}
         run: |
           make -j$(nproc) Image.gz-dtb
 
