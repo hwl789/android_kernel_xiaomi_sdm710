@@ -1,49 +1,66 @@
-name: Build SDM710 Kernel (Sirius/小米8 SE)
+name: Build Sirius KSU Kernel
 on:
-  workflow_dispatch:
   push:
     branches: [ lineage-23.2-ksu ]
+  workflow_dispatch: # 支持手动触发
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
-      - name: 1. 拉取内核源码
+      - name: Checkout Kernel Source
         uses: actions/checkout@v4
         with:
-          repository: hwl789/android_kernel_xiaomi_sdm710
+          repository: Rocky7842/kernel_xiaomi_sirius
           ref: lineage-23.2-ksu
-          submodules: recursive
-          fetch-depth: 1
+          fetch-depth: 0
 
-      - name: 2. 换清华源 + 安装GCC‑9交叉编译器（适配4.9老内核，避开Clang兼容问题）
+      - name: Install Dependencies
         run: |
-          sudo sed -i 's/archive.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
-          sudo sed -i 's/security.ubuntu.com/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list
           sudo apt update -y
-          sudo apt install -y bc bison flex libssl-dev make libelf-dev gcc-9-aarch64-linux-gnu g++-9-aarch64-linux-gnu
-          sudo ln -sf /usr/bin/aarch64-linux-gnu-gcc-9 /usr/bin/aarch64-linux-gnu-gcc
-          sudo ln -sf /usr/bin/aarch64-linux-gnu-g++-9 /usr/bin/aarch64-linux-gnu-g++
+          sudo apt install -y build-essential libssl-dev libelf-dev bzip2 zip unzip wget git
 
-      - name: 3. 配置GCC交叉编译环境
-        run: echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
-
-      - name: 4. 加载小米8SE默认内核配置
+      - name: Download Clang Toolchain (匹配作者编译环境)
         run: |
-          cp arch/arm64/configs/xiaomi/sirius.config .config
-          make ARCH=arm64 CROSS_COMPILE=${{ env.CROSS_COMPILE }} olddefconfig
+          git clone https://github.com/LineageOS/android_prebuilts_clang_kernel.git clang
+          export CLANG_PATH=$PWD/clang/bin
+          echo "PATH=$CLANG_PATH:$PATH" >> $GITHUB_ENV
 
-      - name: 5. 编译内核，输出 arch/arm64/boot/Image 与 Image.gz‑dtb
+      - name: Build Kernel Image.gz-dtb
+        run: |
+          export ARCH=arm64
+          export CROSS_COMPILE=$PWD/clang/bin/aarch64-linux-gnu-
+          make sirius_defconfig
+          make -j$(nproc) CC=clang
         env:
-          ARCH: arm64
-          CROSS_COMPILE: ${{ env.CROSS_COMPILE }}
-        run: |
-          make -j$(nproc) Image.gz-dtb
+          KBUILD_BUILD_USER: GitHub
+          KBUILD_BUILD_HOST: Actions
 
-      - name: 6. 上传内核镜像
+      - name: Build boot.img (fastboot线刷包)
+        run: |
+          git clone https://github.com/osm0sis/mkbootimg.git
+          cd mkbootimg && make && cd ..
+          ./mkbootimg/mkbootimg \
+            --kernel arch/arm64/boot/Image.gz-dtb \
+            --base 0x00000000 \
+            --kernel_offset 0x00008000 \
+            --ramdisk_offset 0x01000000 \
+            --tags_offset 0x00000100 \
+            --pagesize 4096 \
+            -o boot.img
+
+      - name: Build AnyKernel3.zip (Rec卡刷包)
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3.git
+          cp arch/arm64/boot/Image.gz-dtb AnyKernel3/zImage-dtb
+          cd AnyKernel3
+          zip -r ../AnyKernel3-sirius-ksu.zip *
+
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Sirius-Kernel-Image
-          path: |
-            arch/arm64/boot/Image
+          name: Sirius-KSU-Kernel
+          paths: |
+            boot.img
+            AnyKernel3-sirius-ksu.zip
             arch/arm64/boot/Image.gz-dtb
