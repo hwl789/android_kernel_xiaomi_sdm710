@@ -8,7 +8,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # 去掉 repository 指定，直接拉取【你自己fork后的仓库源码】
       - name: Checkout Kernel Source
         uses: actions/checkout@v4
         with:
@@ -18,11 +17,13 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update -y
-          sudo apt install -y build-essential libssl-dev libelf-dev bzip2 zip unzip wget git
+          sudo apt install -y build-essential libssl-dev libelf-dev bzip2 zip unzip wget curl
 
+      # 改用wget下载固定版本Clang，避开git认证报错
       - name: Download Clang Toolchain
         run: |
-          git clone https://github.com/LineageOS/android_prebuilts_clang_kernel.git clang
+          wget https://github.com/LineageOS/android_prebuilts_clang_kernel/releases/download/17.0.2/clang-linux-x86-17.0.2.tar.zst
+          tar -I zstd -xf clang-linux-x86-17.0.2.tar.zst -C ./clang --strip-components=1
           export CLANG_PATH=$PWD/clang/bin
           echo "PATH=$CLANG_PATH:$PATH" >> $GITHUB_ENV
 
