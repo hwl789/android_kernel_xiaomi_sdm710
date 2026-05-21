@@ -17,13 +17,12 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update -y
-          sudo apt install -y build-essential libssl-dev libelf-dev bzip2 zip unzip wget curl
+          sudo apt install -y build-essential libssl-dev libelf-dev bzip2 zip unzip wget git
 
-      # 改用wget下载固定版本Clang，避开git认证报错
-      - name: Download Clang Toolchain
+      # 采用Android常用稳定Clang，链接永久有效，无404
+      - name: Download Stable Clang
         run: |
-          wget https://github.com/LineageOS/android_prebuilts_clang_kernel/releases/download/17.0.2/clang-linux-x86-17.0.2.tar.zst
-          tar -I zstd -xf clang-linux-x86-17.0.2.tar.zst -C ./clang --strip-components=1
+          git clone https://github.com/kdrag0n/proton-clang.git clang --depth=1
           export CLANG_PATH=$PWD/clang/bin
           echo "PATH=$CLANG_PATH:$PATH" >> $GITHUB_ENV
 
